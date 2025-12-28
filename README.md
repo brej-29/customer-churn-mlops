@@ -486,6 +486,16 @@ This project includes a simple drift report based on **Evidently**:
   - The most recent prediction inputs from the SQLite log
     (`logs/predictions.db`), using a configurable window (`DRIFT_WINDOW`).
 
+Under the hood, the monitoring script uses the Evidently v0.7+ API:
+
+```python
+from evidently import Report
+from evidently.presets import DataDriftPreset
+
+report = Report(metrics=[DataDriftPreset()])
+report.run(reference_data=reference_df, current_data=current_df)
+```
+
 To generate a drift report locally:
 
 1. Ensure you have some prediction logs (for example, by exercising the UI or
