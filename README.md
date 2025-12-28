@@ -32,15 +32,22 @@ Everything runs locally and is intended to be easy to extend.
 ├── ui/
 │   ├── app.py            # Streamlit UI that calls the FastAPI /predict endpoint
 │   └── Dockerfile        # Streamlit Docker image
+├── monitoring/
+│   ├── __init__.py
+│   └── generate_drift_report.py  # Evidently drift report generation
+├── loadtest/
+│   └── locustfile.py     # Locust load test for /health and /predict
 ├── notebooks/
 │   ├── 01_eda.ipynb      # EDA using the same synthetic data pipeline
 │   └── README.md
 ├── tests/
 │   ├── test_api.py       # API unit tests
+│   ├── test_metrics.py   # /metrics scrape endpoint tests
+│   ├── test_monitoring_drift.py  # Drift report generation tests
 │   └── test_ui_utils.py  # UI payload / typing tests
 ├── docker-compose.yml    # End-to-end demo (MLflow + API + UI + trainer)
 ├── requirements.txt
-├── requirements-dev.txt  # Optional notebook/EDA dependencies
+├── requirements-dev.txt  # Optional notebook/EDA/load-test dependencies
 ├── LICENSE
 └── README.md
 ```
@@ -260,6 +267,9 @@ This runs the same tests as CI and currently exercises:
 
 - `/health`
 - `/predict` (ensures it returns a probability between 0 and 1)
+- `/stats` and `/recent` (prediction logging and summaries)
+- `/metrics` (Prometheus scrape endpoint)
+- Drift report generation on a small synthetic sample
 
 You can also run without `-q` for more verbose output:
 
@@ -407,7 +417,154 @@ Persisted MLflow data is stored in:
 
 ---
 
-## 7. Notes and Next Steps
+## 7. Observability & Monitoring
+
+This starter includes basic observability features so you can inspect how the
+model behaves over time and under load.
+
+### Prediction logging and latency
+
+Every successful or failed `/predict` call is logged to a lightweight SQLite
+database (by default `logs/predictions.db`). For each request the API stores:
+
+- `timestamp` – when the prediction was made (UTC)
+- `request_payload` – the full feature payload sent by the client
+- `churn_probability` – model output (or `null` on failure)
+- `model_uri` – value of `CHURN_MODEL_URI` used by the service
+- `latency_ms` – end-to-end processing time for `/predict`
+- `status` – `"success"` or `"fail"`
+- `error_message` – error summary for failed requests
+
+Latency is also exposed per-request via the `X-Model-Latency-ms` HTTP response
+header for `/predict`.
+
+Two convenience endpoints make it easy to inspect recent traffic:
+
+- `GET /stats?limit=100` – summary over the last *N* requests:
+  - `count`, `success_rate`, `latency_p50_ms`, `latency_p95_ms`,
+    `latency_avg_ms`, `avg_churn_probability`, `last_model_uri`
+- `GET /recent?limit=20` – raw log records (most recent first), including the
+  full payload for each request
+
+These are intended for local monitoring and demos; no redaction or
+authentication is applied.
+
+### Prometheus /metrics
+
+The FastAPI app is instrumented with
+`prometheus-fastapi-instrumentator` and exposes a `/metrics` endpoint suitable
+for scraping by Prometheus:
+
+- Endpoint: `GET http://localhost:8000/metrics`
+- Includes standard HTTP metrics such as request counts, durations, and status
+  codes per path and method.
+
+A minimal Prometheus scrape configuration might look like:
+
+```yaml
+scrape_configs:
+  - job_name: "churn-api"
+    static_configs:
+      - targets: ["host.docker.internal:8000"]  # or "localhost:8000"
+```
+
+You can disable metrics instrumentation entirely by setting
+`PROMETHEUS_ENABLED=false` before starting the API.
+
+### Drift monitoring with Evidently
+
+Data drift occurs when the distribution of incoming data changes compared to
+what the model saw during training. This can erode model performance over time
+even if the code and model weights do not change.
+
+This project includes a simple drift report based on **Evidently**:
+
+- Reference data:
+  - The training dataset is materialized to `data/churn_reference.csv`
+    (auto-generated if missing).
+- Current data:
+  - The most recent prediction inputs from the SQLite log
+    (`logs/predictions.db`), using a configurable window (`DRIFT_WINDOW`).
+
+To generate a drift report locally:
+
+1. Ensure you have some prediction logs (for example, by exercising the UI or
+   calling `/predict` directly).
+2. From the project root, run:
+
+   ```bash
+   python -m monitoring.generate_drift_report
+   ```
+
+3. Outputs (by default):
+
+   - HTML report: `reports/drift_report.html`
+   - JSON snapshot: `reports/drift_report.json`
+
+Open `reports/drift_report.html` in a browser to view Evidently's diagnostics,
+including feature-level drift scores and summary charts.
+
+You can customize behavior via environment variables:
+
+- `DRIFT_WINDOW` – number of most recent predictions to treat as \"current\" data
+- `REPORT_OUTPUT_DIR` – where to write the HTML/JSON artifacts
+- `REFERENCE_DATA_PATH` – path to the reference dataset used during training
+
+### Load testing with Locust
+
+To exercise the API under concurrent load, you can use **Locust**:
+
+1. Install dev dependencies (including Locust):
+
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
+2. Start the API (and MLflow if desired) as usual, e.g.:
+
+   ```bash
+   uvicorn api.main:app --reload
+   ```
+
+3. In a separate terminal, run Locust from the project root:
+
+   ```bash
+   locust -f loadtest/locustfile.py --host http://localhost:8000
+   ```
+
+4. Open the Locust web UI (typically `http://localhost:8089`), set the number
+   of users and spawn rate, and start the test.
+
+The default Locust user behavior:
+
+- Periodically calls `GET /health` to verify service availability
+- Sends randomized customer payloads to `POST /predict`
+
+This gives you a quick sense of API throughput, latency distribution, and error
+rates, especially when used together with `/metrics` and the `/stats` endpoint.
+
+---
+
+## Configuration
+
+These environment variables control observability and monitoring behaviour:
+
+| Variable              | Default                             | Description                                                                 |
+|-----------------------|-------------------------------------|-----------------------------------------------------------------------------|
+| `MLFLOW_TRACKING_URI` | `file:./mlruns`                     | MLflow tracking server used by training and the API.                        |
+| `CHURN_MODEL_URI`     | `models:/CustomerChurnModel@champion` | MLflow model URI loaded by the API.                                        |
+| `LOG_DB_PATH`         | `logs/predictions.db`              | SQLite database used to store `/predict` logs.                              |
+| `DRIFT_WINDOW`        | `500`                               | Number of most recent prediction logs used as \"current\" data for drift.    |
+| `REFERENCE_DATA_PATH` | `data/churn_reference.csv`         | Path to the reference dataset used for drift analysis.                      |
+| `REPORT_OUTPUT_DIR`   | `reports`                          | Output directory for drift reports (`drift_report.html` / `.json`).         |
+| `PROMETHEUS_ENABLED`  | `true`                             | Enable Prometheus instrumentation and the `/metrics` endpoint when `true`.  |
+
+You can override any of these by setting the corresponding environment variable
+before starting the API or running the monitoring scripts.
+
+---
+
+## 8. Notes and Next Steps
 
 - The dataset is synthetic but structured to resemble telecom churn patterns and is entirely local.
 - The MLflow integration is minimal by design and can be extended with:
