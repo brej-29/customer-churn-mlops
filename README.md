@@ -174,13 +174,25 @@ Install dependencies (including `ruff`) if you haven't already:
 pip install -r requirements.txt
 ```
 
-Then run ruff against the codebase:
+Then run ruff checks against the codebase:
 
 ```bash
-ruff .
+ruff check .
 ```
 
-CI will fail if this step fails, so it's good practice to run it before pushing.
+To automatically format the code, run:
+
+```bash
+ruff format .
+```
+
+If you want to verify formatting without changing files, use:
+
+```bash
+ruff format --check .
+```
+
+CI runs `ruff check .` (lint-only). It's good practice to run both lint and formatting locally before pushing.
 
 ### Optional: quick syntax check
 

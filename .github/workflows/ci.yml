@@ -34,7 +34,7 @@ jobs:
           fi
 
       - name: Lint with ruff
-        run: ruff .
+        run: ruff check .
 
       - name: Compile all Python files
         run: python -m compileall .
