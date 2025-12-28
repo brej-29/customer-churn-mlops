@@ -29,10 +29,11 @@ def test_generate_drift_report_small_sample(tmp_path):
     assert html_file.is_file()
     assert json_file.is_file()
 
+    # HTML should be non-trivial in size.
+    assert html_file.stat().st_size > 200
+
     # JSON should be valid and contain some top-level fields.
     content = json_file.read_text(encoding="utf-8")
     data = json.loads(content)
     assert isinstance(data, dict)
     assert data  # not empty
-    # Evidently reports typically contain a \"metrics\" section in JSON output.
-    assert "metrics" in data

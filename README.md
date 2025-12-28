@@ -493,7 +493,9 @@ from evidently import Report
 from evidently.presets import DataDriftPreset
 
 report = Report(metrics=[DataDriftPreset()])
-report.run(reference_data=reference_df, current_data=current_df)
+snapshot = report.run(reference_data=reference_df, current_data=current_df)
+snapshot.save_html("drift_report.html")
+snapshot.save_json("drift_report.json")
 ```
 
 To generate a drift report locally:

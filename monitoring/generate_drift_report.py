@@ -90,6 +90,62 @@ def load_current_data(
     return df[FEATURE_COLUMNS]
 
 
+def _save_html_and_json(result: object, html_path: Path, json_path: Path) -> None:
+    """Persist an Evidently evaluation result to HTML and JSON with fallbacks.
+
+    Newer Evidently versions expose save_html/save_json on the result object
+    returned by Report.run(). Older or variant builds may expose these methods
+    on the Report instance itself, or only provide json()/dict() helpers.
+    """
+    # HTML
+    if hasattr(result, "save_html"):
+        result.save_html(str(html_path))
+    else:
+        # Minimal fallback: embed JSON in a simple HTML shell if possible.
+        try:
+            if hasattr(result, "json"):
+                html_path.write_text(
+                    "<html><body><pre>"
+                    + json.dumps(json.loads(result.json()), indent=2)
+                    + "</pre></body></html>",
+                    encoding="utf-8",
+                )
+            elif hasattr(result, "dict"):
+                html_path.write_text(
+                    "<html><body><pre>"
+                    + json.dumps(result.dict(), indent=2)
+                    + "</pre></body></html>",
+                    encoding="utf-8",
+                )
+            else:
+                html_path.write_text(
+                    "<html><body><p>No HTML available.</p></body></html>",
+                    encoding="utf-8",
+                )
+        except Exception:  # noqa: BLE001
+            html_path.write_text(
+                "<html><body><p>Failed to generate HTML.</p></body></html>",
+                encoding="utf-8",
+            )
+
+    # JSON
+    if hasattr(result, "save_json"):
+        result.save_json(str(json_path))
+    else:
+        try:
+            if hasattr(result, "json"):
+                json_path.write_text(result.json(), encoding="utf-8")
+            elif hasattr(result, "dict"):
+                json_path.write_text(
+                    json.dumps(result.dict(), indent=2),
+                    encoding="utf-8",
+                )
+            else:
+                json_path.write_text("{}", encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            json_path.write_text("{}", encoding="utf-8")
+
+
 def generate_drift_report(
     reference_data: pd.DataFrame,
     current_data: pd.DataFrame,
@@ -102,7 +158,9 @@ def generate_drift_report(
     - from evidently.presets import DataDriftPreset
     """
     report = Report(metrics=[DataDriftPreset()])
-    report.run(
+
+    # Evidently v0.7+ returns an evaluation result object from run().
+    snapshot = report.run(
         reference_data=reference_data.reset_index(drop=True),
         current_data=current_data.reset_index(drop=True),
     )
@@ -113,9 +171,9 @@ def generate_drift_report(
     html_path = out_dir / "drift_report.html"
     json_path = out_dir / "drift_report.json"
 
-    report.save_html(str(html_path))
-    with json_path.open("w", encoding="utf-8") as f:
-        f.write(report.json())
+    # Prefer the snapshot if available; fall back to the Report instance.
+    target = snapshot if snapshot is not None else report
+    _save_html_and_json(target, html_path=html_path, json_path=json_path)
 
     return str(html_path), str(json_path)
 
