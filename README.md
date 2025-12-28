@@ -166,6 +166,12 @@ The response will contain:
 
 (The exact value will differ.)
 
+Note on input types:
+
+- The model expects integer features (`tenure`, `contract_type`, `has_internet`, `support_calls`, `is_senior`) and a floating-point feature (`monthly_charges`).
+- The API will accept both integers and floats that represent integer values (for example, `12` and `12.0`) for the integer features and will safely coerce them before calling the MLflow model.
+- If a non-integer float is sent for an integer feature (for example, `12.7`), the API will return a 422 response with a clear validation error instead of a 500 error.
+
 ### How serving picks the model
 
 By default this starter uses an MLflow **model alias** to decide which version the API serves:

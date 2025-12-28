@@ -11,7 +11,13 @@ api_url = st.sidebar.text_input("FastAPI base URL", value=DEFAULT_API_URL)
 
 st.header("Customer Features")
 
-tenure = st.number_input("Tenure (months)", min_value=0, max_value=72, value=12)
+tenure = st.number_input(
+    "Tenure (months)",
+    min_value=0,
+    max_value=72,
+    value=12,
+    step=1,
+)
 monthly_charges = st.number_input(
     "Monthly charges", min_value=0.0, max_value=200.0, value=70.0, step=1.0
 )
@@ -28,20 +34,34 @@ has_internet = st.selectbox("Has internet service?", ["No", "Yes"])
 has_internet_value = 1 if has_internet == "Yes" else 0
 
 support_calls = st.number_input(
-    "Support calls in last month", min_value=0, max_value=20, value=1
+    "Support calls in last month", min_value=0, max_value=20, value=1, step=1
 )
 
 is_senior = st.selectbox("Is senior citizen?", ["No", "Yes"])
 is_senior_value = 1 if is_senior == "Yes" else 0
 
 if st.button("Predict"):
+    # Basic client-side validation in case the widgets are reconfigured to allow floats.
+    integer_fields = [("tenure", tenure), ("support_calls", support_calls)]
+    non_integer_fields = [
+        (name, value)
+        for name, value in integer_fields
+        if isinstance(value, float) and not float(value).is_integer()
+    ]
+    if non_integer_fields:
+        for field_name, value in non_integer_fields:
+            st.warning(
+                f"{field_name.replace('_', ' ')} must be an integer value (received {value})."
+            )
+        st.stop()
+
     payload = {
-        "tenure": tenure,
-        "monthly_charges": monthly_charges,
-        "contract_type": contract_type,
-        "has_internet": has_internet_value,
-        "support_calls": support_calls,
-        "is_senior": is_senior_value,
+        "tenure": int(tenure),
+        "monthly_charges": float(monthly_charges),
+        "contract_type": int(contract_type),
+        "has_internet": int(has_internet_value),
+        "support_calls": int(support_calls),
+        "is_senior": int(is_senior_value),
     }
 
     try:
