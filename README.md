@@ -186,13 +186,13 @@ To automatically format the code, run:
 ruff format .
 ```
 
-If you want to verify formatting without changing files (as CI does), use:
+If you want to verify formatting without changing files, use:
 
 ```bash
 ruff format --check .
 ```
 
-CI will fail if any of these checks fail, so it's good practice to run them before pushing.
+CI runs `ruff check .` (lint-only). It's good practice to run both lint and formatting locally before pushing.
 
 ### Optional: quick syntax check
 
