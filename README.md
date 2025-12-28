@@ -1,17 +1,42 @@
-# Customer Churn MLOps Starter
+<div align="center">
+  <h1>Customer Churn MLOps Starter</h1>
+  <p><i>Production-style starter for telecom churn — XGBoost Training → MLflow Tracking/Registry → FastAPI Model Serving → Streamlit UI → Dockerized End-to-End Demo</i></p>
+</div>
 
-![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)
+<br>
 
-Production-style starter project for a telecom customer churn prediction pipeline using:
+<div align="center">
+  <img alt="CI" src="https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg">
+  <img alt="Language" src="https://img.shields.io/badge/Language-Python-blue">
+  <img alt="Framework" src="https://img.shields.io/badge/Framework-FastAPI-009688?logo=fastapi&logoColor=white">
+  <img alt="UI" src="https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white">
+  <img alt="MLOps" src="https://img.shields.io/badge/MLOps-MLflow%20Tracking%20%2B%20Registry-orange">
+  <img alt="Deployment" src="https://img.shields.io/badge/Infra-Docker%20Compose-2496ED?logo=docker&logoColor=white">
+  </br>
+  <a href="https://github.com/OWNER/REPO" target="_blank">
+    <button style="background-color: #0f766e; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">
+        REPO LINK
+    </button>
+  </a>
+</div>
 
-- **XGBoost** for modeling
-- **MLflow** for experiment tracking
-- **FastAPI** for serving predictions
-- **Streamlit** for a simple UI
-
-Everything runs locally and is intended to be easy to extend.
+<div align="center">
+  <br>
+  <b>Built with:</b>
+  <br><br>
+  <code>Python</code> |
+  <code>XGBoost</code> |
+  <code>scikit-learn</code> |
+  <code>MLflow</code> |
+  <code>FastAPI</code> |
+  <code>Streamlit</code> |
+  <code>Docker</code> |
+  <code>pytest</code>
+</div>
 
 ---
+
+## Project Structure
 
 ## Project Structure
 
