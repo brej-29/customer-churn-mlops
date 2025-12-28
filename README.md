@@ -21,11 +21,11 @@ Everything runs locally and is intended to be easy to extend.
 ├── data/
 │   └── .gitkeep          # Placeholder for raw/processed data
 ├── models/
-│   └── .gitkeep          # Trained model artifacts (saved by training)
+│   └── .gitkeep          # Optional local model artifacts
 ├── training/
 │   ├── __init__.py
 │   ├── preprocess.py     # Synthetic data generation & train/test split
-│   └── train.py          # XGBoost training + MLflow logging
+│   └── train.py          # XGBoost training + MLflow logging + Model Registry
 ├── ui/
 │   └── app.py            # Streamlit UI that calls the FastAPI /predict endpoint
 ├── tests/
@@ -56,14 +56,15 @@ Everything runs locally and is intended to be easy to extend.
 
 ---
 
-## 1. Run Training (XGBoost + MLflow)
+## 1. Run Training (XGBoost + MLflow + Model Registry)
 
 The training script:
 
 - Generates a synthetic churn dataset (no external data download required)
 - Trains an XGBoost classifier
-- Logs hyperparameters, metrics, and the model artifact to **MLflow**
-- Saves the latest trained model to `models/xgboost_churn_model.json`
+- Logs hyperparameters and metrics to **MLflow**
+- Logs the model with an input example and inferred signature so the schema is stored
+- Registers the model in the **MLflow Model Registry** as `CustomerChurnModel` (when a registry-enabled tracking URI is used)
 
 From the project root:
 
@@ -73,29 +74,71 @@ python -m training.train
 
 After it completes, you should see:
 
-- An MLflow run recorded under experiment `churn_xgboost`
-- A model file at `models/xgboost_churn_model.json`
+- An MLflow run recorded under experiment `customer-churn`
+- A new or updated registered model version named `CustomerChurnModel` (when the Model Registry is available)
+- Console output showing the run-level model URI and a suggested serving URI such as `models:/CustomerChurnModel/Production`
 
-### Optional: Browse MLflow UI
+### MLflow tracking URI and UI
 
-In a separate terminal (from the project root):
+Both training and the API look at these environment variables:
+
+- `MLFLOW_TRACKING_URI`  
+  - Where MLflow logs runs and (optionally) hosts the Model Registry  
+  - Default: `file:./mlruns` (local filesystem tracking)
+- `CHURN_MODEL_URI`  
+  - The model URI that the API will load with `mlflow.pyfunc.load_model`  
+  - Default: `models:/CustomerChurnModel/Production`
+
+#### Option A: Quick local UI (no Model Registry)
+
+If you just want to browse local runs stored under `./mlruns`:
 
 ```bash
 mlflow ui
 ```
 
-By default, this starts a UI at `http://127.0.0.1:5000`, where you can see runs, metrics, and artifacts.
+This starts a UI at `http://127.0.0.1:5000`, where you can see runs, metrics, and artifacts.
+
+#### Option B: Local MLflow server with Model Registry
+
+To use the Model Registry locally, run an MLflow server backed by SQLite:
+
+```bash
+export MLFLOW_TRACKING_URI=http://127.0.0.1:5000
+
+mlflow server \
+  --backend-store-uri sqlite:///mlruns.db \
+  --default-artifact-root ./mlartifacts \
+  --host 127.0.0.1 \
+  --port 5000
+```
+
+Then open `http://127.0.0.1:5000` in your browser to access both the MLflow UI and the Model Registry.
+
+After running `python -m training.train` with this server running, you should see new runs and registered model versions under the name `CustomerChurnModel`.
 
 ---
 
 ## 2. Run the FastAPI Service
 
-The FastAPI app loads the latest XGBoost model from `models/xgboost_churn_model.json` if present.  
-If no model is found, it falls back to a simple heuristic so the `/predict` endpoint still responds.
+The FastAPI app:
 
-Start the API with **uvicorn**:
+- Loads a model once at startup using FastAPI's lifespan mechanism
+- Uses `mlflow.pyfunc.load_model(CHURN_MODEL_URI)` to load the churn model
+- Keeps the loaded model in `app.state.model` and reuses it for all requests
+- Falls back to a simple heuristic only if the MLflow model cannot be loaded (useful for local development/tests)
+
+By default, the app looks for:
+
+- `MLFLOW_TRACKING_URI` – must point at the same MLflow tracking server used during training
+- `CHURN_MODEL_URI` – defaults to `models:/CustomerChurnModel/Production`
+
+A typical setup using the local MLflow server from above:
 
 ```bash
+export MLFLOW_TRACKING_URI=http://127.0.0.1:5000
+export CHURN_MODEL_URI=models:/CustomerChurnModel/Production  # or a specific version, e.g. models:/CustomerChurnModel/1
+
 uvicorn api.main:app --reload
 ```
 
