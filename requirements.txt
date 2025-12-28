@@ -9,3 +9,4 @@ pydantic
 streamlit
 requests
 pytest
+ruff
