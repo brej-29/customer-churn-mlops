@@ -4,6 +4,7 @@ import mlflow
 import mlflow.xgboost
 from mlflow.exceptions import MlflowException
 from mlflow.models import infer_signature
+from mlflow.tracking import MlflowClient
 from sklearn.metrics import accuracy_score, log_loss, roc_auc_score
 from xgboost import XGBClassifier
 
@@ -11,8 +12,9 @@ from training.preprocess import FEATURE_COLUMNS, get_train_test_data
 
 EXPERIMENT_NAME = "customer-churn"
 MODEL_NAME = "CustomerChurnModel"
+DEFAULT_MODEL_ALIAS = "champion"
 DEFAULT_TRACKING_URI = "file:./mlruns"
-DEFAULT_SERVING_URI = f"models:/{MODEL_NAME}/Production"
+DEFAULT_SERVING_URI = f"models:/{MODEL_NAME}@{DEFAULT_MODEL_ALIAS}"
 
 
 def get_tracking_uri() -> str:
@@ -93,18 +95,46 @@ def train() -> None:
                 "in the MLflow Model Registry."
             )
             print(f"Model URI for this version: {registered_model_uri}")
+
+            client = MlflowClient()
+            model_alias = os.getenv("CHURN_MODEL_ALIAS", DEFAULT_MODEL_ALIAS)
+
+            if hasattr(client, "set_registered_model_alias"):
+                client.set_registered_model_alias(
+                    name=MODEL_NAME,
+                    alias=model_alias,
+                    version=registered_model.version,
+                )
+                alias_uri = f"models:/{MODEL_NAME}@{model_alias}"
+                print(
+                    f"Updated alias '{model_alias}' to point to version "
+                    f"{registered_model.version}."
+                )
+                print(
+                    "Default serving URI (CHURN_MODEL_URI) for this project is now: "
+                    f"{alias_uri}"
+                )
+            else:
+                print(
+                    "MLflow client does not support model aliases. "
+                    "Consider upgrading MLflow or using a stage-based URI such as "
+                    f"'models:/{MODEL_NAME}/Production' instead."
+                )
         except MlflowException as exc:
             print(
-                "Model registration skipped or failed. "
-                "The MLflow Model Registry may not be available for the current tracking URI."
+                "Model registration or alias update skipped or failed. "
+                "The MLflow Model Registry may not be available for the current tracking URI, "
+                "or your MLflow version may not support aliases."
             )
             print(f"Error details: {exc}")
 
         serving_uri = os.getenv("CHURN_MODEL_URI", DEFAULT_SERVING_URI)
         print(f"Suggested serving URI (CHURN_MODEL_URI) for the churn model: {serving_uri}")
         print(
-            "If you promote the registered model to a stage (for example, 'Production'), "
-            f"you can use a stage-based URI such as 'models:/{MODEL_NAME}/Production'."
+            "By default, this project expects CHURN_MODEL_URI to point at a model alias "
+            f"such as 'models:/{MODEL_NAME}@{DEFAULT_MODEL_ALIAS}'. "
+            "You can also use a stage-based URI, for example "
+            f"'models:/{MODEL_NAME}/Production', if you prefer stage-based promotion."
         )
 
         print(

@@ -9,7 +9,8 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 DEFAULT_MODEL_NAME = "CustomerChurnModel"
-DEFAULT_MODEL_URI = f"models:/{DEFAULT_MODEL_NAME}/Production"
+DEFAULT_MODEL_ALIAS = "champion"
+DEFAULT_MODEL_URI = f"models:/{DEFAULT_MODEL_NAME}@{DEFAULT_MODEL_ALIAS}"
 DEFAULT_TRACKING_URI = "file:./mlruns"
 
 CHURN_MODEL_URI = os.getenv("CHURN_MODEL_URI", DEFAULT_MODEL_URI)

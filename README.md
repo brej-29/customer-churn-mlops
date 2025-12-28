@@ -76,7 +76,7 @@ After it completes, you should see:
 
 - An MLflow run recorded under experiment `customer-churn`
 - A new or updated registered model version named `CustomerChurnModel` (when the Model Registry is available)
-- Console output showing the run-level model URI and a suggested serving URI such as `models:/CustomerChurnModel/Production`
+- Console output showing the run-level model URI and a suggested serving URI such as `models:/CustomerChurnModel@champion` (alias-based) or `models:/CustomerChurnModel/Production` (stage-based)
 
 ### MLflow tracking URI and UI
 
@@ -87,7 +87,7 @@ Both training and the API look at these environment variables:
   - Default: `file:./mlruns` (local filesystem tracking)
 - `CHURN_MODEL_URI`  
   - The model URI that the API will load with `mlflow.pyfunc.load_model`  
-  - Default: `models:/CustomerChurnModel/Production`
+  - Default: `models:/CustomerChurnModel@champion`
 
 #### Option A: Quick local UI (no Model Registry)
 
@@ -131,13 +131,13 @@ The FastAPI app:
 By default, the app looks for:
 
 - `MLFLOW_TRACKING_URI` – must point at the same MLflow tracking server used during training
-- `CHURN_MODEL_URI` – defaults to `models:/CustomerChurnModel/Production`
+- `CHURN_MODEL_URI` – defaults to `models:/CustomerChurnModel@champion`
 
 A typical setup using the local MLflow server from above:
 
 ```bash
 export MLFLOW_TRACKING_URI=http://127.0.0.1:5000
-export CHURN_MODEL_URI=models:/CustomerChurnModel/Production  # or a specific version, e.g. models:/CustomerChurnModel/1
+export CHURN_MODEL_URI=models:/CustomerChurnModel@champion  # or a specific version (e.g. models:/CustomerChurnModel/3) or stage (e.g. models:/CustomerChurnModel/Production)
 
 uvicorn api.main:app --reload
 ```
@@ -165,6 +165,31 @@ The response will contain:
 ```
 
 (The exact value will differ.)
+
+### How serving picks the model
+
+By default this starter uses an MLflow **model alias** to decide which version the API serves:
+
+- The training script registers each new model version as `CustomerChurnModel`.
+- When the Model Registry is available, it automatically updates the alias `champion`
+  to point at the latest registered version.
+- The FastAPI service loads whatever `CHURN_MODEL_URI` points at, and by default that is
+  `models:/CustomerChurnModel@champion`.
+
+This has a few practical consequences:
+
+- Retrain and re-register a model, and the next time you (re)start the API it will
+  serve the new "champion" version.
+- To roll back, change the alias in the MLflow UI/CLI to point at an older version
+  (no code changes required).
+- You can override the alias used during training by setting `CHURN_MODEL_ALIAS`
+  (for example, `staging`), and you can override what the API serves by setting
+  `CHURN_MODEL_URI` explicitly (for example, `models:/CustomerChurnModel@staging`).
+
+If you prefer stage-based URIs instead of aliases, you can:
+
+- Promote a model version to the `Production` stage in the MLflow UI, and
+- Set `CHURN_MODEL_URI=models:/CustomerChurnModel/Production` for the API.
 
 ---
 
@@ -282,10 +307,11 @@ python -m compileall .
   - Custom tracking URIs
   - Model registry
   - Multiple experiments / runs comparison
-- The FastAPI service currently loads a single “latest” model from `models/xgboost_churn_model.json`.  
+- The FastAPI service loads its model from MLflow using `mlflow.pyfunc.load_model(CHURN_MODEL_URI)` and,
+  by default, targets the `champion` alias (`models:/CustomerChurnModel@champion`).  
   You can evolve this to:
-  - Load a model from a specific MLflow run
-  - Pull models from a registry
-  - Support versioned deployments
+  - Pin to a specific MLflow run or model version
+  - Use different aliases (for example, `staging` vs `champion`)
+  - Integrate more sophisticated deployment flows
 
 This starter is intended as a foundation for a more complete MLOps pipeline—feel free to extend it with CI, Docker, cloud storage, and orchestration as needed.
