@@ -1,15 +1,45 @@
-from pathlib import Path
-from typing import Optional
+import os
+from contextlib import asynccontextmanager
+from typing import Any
 
+import mlflow
 import numpy as np
-from fastapi import FastAPI
+import pandas as pd
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
-from xgboost import XGBClassifier
 
-app = FastAPI(title="Customer Churn Prediction API")
+DEFAULT_MODEL_NAME = "CustomerChurnModel"
+DEFAULT_MODEL_URI = f"models:/{DEFAULT_MODEL_NAME}/Production"
+DEFAULT_TRACKING_URI = "file:./mlruns"
 
-MODEL_PATH = Path("models/xgboost_churn_model.json")
-_model: Optional[XGBClassifier] = None
+CHURN_MODEL_URI = os.getenv("CHURN_MODEL_URI", DEFAULT_MODEL_URI)
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", DEFAULT_TRACKING_URI)
+
+
+def load_model() -> Any:
+    model_uri = CHURN_MODEL_URI
+    if not model_uri:
+        return None
+
+    if MLFLOW_TRACKING_URI:
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+    try:
+        model = mlflow.pyfunc.load_model(model_uri)
+        print(f"Loaded MLflow model from {model_uri}")
+        return model
+    except Exception as exc:  # noqa: BLE001
+        print(f"WARNING: Failed to load MLflow model from {model_uri}: {exc}")
+        return None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.model = load_model()
+    yield
+
+
+app = FastAPI(title="Customer Churn Prediction API", lifespan=lifespan)
 
 
 class PredictRequest(BaseModel):
@@ -25,57 +55,58 @@ class PredictResponse(BaseModel):
     churn_probability: float
 
 
-def load_model() -> Optional[XGBClassifier]:
-    global _model
-    if _model is None and MODEL_PATH.exists():
-        model = XGBClassifier()
-        model.load_model(MODEL_PATH)
-        _model = model
-    return _model
-
-
-@app.on_event("startup")
-def startup_event():
-    load_model()
-
-
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
 @app.post("/predict", response_model=PredictResponse)
-def predict(request: PredictRequest) -> PredictResponse:
-    model = load_model()
+def predict(request_data: PredictRequest, request: Request) -> PredictResponse:
+    model = getattr(request.app.state, "model", None)
 
-    features = np.array(
+    features = pd.DataFrame(
         [
-            [
-                request.tenure,
-                request.monthly_charges,
-                request.contract_type,
-                request.has_internet,
-                request.support_calls,
-                request.is_senior,
-            ]
-        ],
-        dtype=float,
+            {
+                "tenure": request_data.tenure,
+                "monthly_charges": request_data.monthly_charges,
+                "contract_type": request_data.contract_type,
+                "has_internet": request_data.has_internet,
+                "support_calls": request_data.support_calls,
+                "is_senior": request_data.is_senior,
+            }
+        ]
     )
 
     if model is None:
         score = 0.2
-        if request.tenure < 12:
+        if request_data.tenure < 12:
             score += 0.2
-        if request.monthly_charges > 80:
+        if request_data.monthly_charges > 80:
             score += 0.1
-        if request.support_calls >= 3:
+        if request_data.support_calls >= 3:
             score += 0.1
-        if request.contract_type == 0:
+        if request_data.contract_type == 0:
             score += 0.1
-        if request.is_senior == 1:
+        if request_data.is_senior == 1:
             score += 0.05
         probability = max(0.0, min(0.95, score))
     else:
-        probability = float(model.predict_proba(features)[0, 1])
+        raw_pred = model.predict(features)
+        if isinstance(raw_pred, (list, tuple, np.ndarray)):
+            arr = np.asarray(raw_pred)
+            if arr.ndim == 0:
+                probability = float(arr)
+            elif arr.ndim == 1:
+                probability = float(arr[0])
+            elif arr.ndim == 2 and arr.shape[1] == 1:
+                probability = float(arr[0, 0])
+            elif arr.ndim == 2 and arr.shape[1] == 2:
+                probability = float(arr[0, 1])
+            else:
+                probability = float(arr.ravel()[0])
+        else:
+            probability = float(raw_pred)
+
+        probability = float(np.clip(probability, 0.0, 1.0))
 
     return PredictResponse(churn_probability=probability)
