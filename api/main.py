@@ -408,7 +408,7 @@ def predict(
         status = "fail"
         error_message = str(exc.detail)
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         status = "fail"
         error_message = "Unexpected error during prediction."
         logger.exception("Unhandled error in /predict.")
