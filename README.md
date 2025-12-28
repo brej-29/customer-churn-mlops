@@ -38,8 +38,6 @@
 
 ## Project Structure
 
-## Project Structure
-
 ```text
 .
 ├── api/
