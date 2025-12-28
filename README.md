@@ -1,5 +1,7 @@
 # Customer Churn MLOps Starter
 
+![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)
+
 Production-style starter project for a telecom customer churn prediction pipeline using:
 
 - **XGBoost** for modeling
@@ -17,7 +19,8 @@ Everything runs locally and is intended to be easy to extend.
 .
 ├── api/
 │   ├── __init__.py
-│   └── main.py           # FastAPI app (/health, /predict)
+│   ├── main.py           # FastAPI app (/health, /predict)
+│   └── Dockerfile        # FastAPI Docker image
 ├── data/
 │   └── .gitkeep          # Placeholder for raw/processed data
 ├── models/
@@ -27,12 +30,33 @@ Everything runs locally and is intended to be easy to extend.
 │   ├── preprocess.py     # Synthetic data generation & train/test split
 │   └── train.py          # XGBoost training + MLflow logging + Model Registry
 ├── ui/
-│   └── app.py            # Streamlit UI that calls the FastAPI /predict endpoint
+│   ├── app.py            # Streamlit UI that calls the FastAPI /predict endpoint
+│   └── Dockerfile        # Streamlit Docker image
+├── notebooks/
+│   ├── 01_eda.ipynb      # EDA using the same synthetic data pipeline
+│   └── README.md
 ├── tests/
-│   └── test_api.py       # Basic API tests
+│   ├── test_api.py       # API unit tests
+│   └── test_ui_utils.py  # UI payload / typing tests
+├── docker-compose.yml    # End-to-end demo (MLflow + API + UI + trainer)
 ├── requirements.txt
+├── requirements-dev.txt  # Optional notebook/EDA dependencies
 ├── LICENSE
 └── README.md
+```
+
+---
+
+## Architecture (high level)
+
+```text
+[ Streamlit UI ]  -->  [ FastAPI /predict ]  -->  [ MLflow Tracking & Model Registry ]
+       |                          |                        |
+       |                          |                        +--> [ Model artifacts (mlartifacts/) ]
+       |                          |
+       |                          +--> [ MLflow Tracking DB (SQLite: mlruns.db) ]
+       |
+       +--> [ Users explore churn risk & drivers ]
 ```
 
 ---
@@ -216,6 +240,9 @@ The UI lets you:
 - Enter customer attributes (tenure, monthly charges, contract type, etc.)
 - Click **“Predict”** to send a request to the FastAPI `/predict` endpoint
 - See the estimated churn probability
+- Inspect an approximate feature importance chart and textual explanation of what
+  tends to drive churn in this synthetic dataset
+- See which MLflow experiment and model URI are currently configured
 
 You can change the API base URL from the sidebar if needed.
 
@@ -278,7 +305,7 @@ python -m compileall .
 
 ---
 
-## 5. Typical Local Workflow
+## 5. Typical Local Workflow (without Docker)
 
 1. **Train a model** (or retrain when you change features/hyperparameters):
 
@@ -286,19 +313,30 @@ python -m compileall .
    python -m training.train
    ```
 
-2. **Start the API** (serves the latest model):
+2. **Start an MLflow server** (optional but recommended for registry features):
+
+   ```bash
+   export MLFLOW_TRACKING_URI=http://127.0.0.1:5000  # PowerShell: $env:MLFLOW_TRACKING_URI='http://127.0.0.1:5000'
+   mlflow server \
+     --backend-store-uri sqlite:///mlruns.db \
+     --default-artifact-root ./mlartifacts \
+     --host 127.0.0.1 \
+     --port 5000
+   ```
+
+3. **Start the API** (serves the latest model):
 
    ```bash
    uvicorn api.main:app --reload
    ```
 
-3. **Start the UI** (calls the API):
+4. **Start the UI** (calls the API):
 
    ```bash
    streamlit run ui/app.py
    ```
 
-4. **Run tests** before committing:
+5. **Run tests** before committing:
 
    ```bash
    pytest
@@ -306,7 +344,70 @@ python -m compileall .
 
 ---
 
-## 6. Notes and Next Steps
+## 6. Run the end-to-end demo with Docker
+
+This repository is Dockerized so you can run the full stack (MLflow + API + UI)
+with a single command.
+
+### Build and start all services
+
+From the project root:
+
+```bash
+docker compose up --build
+```
+
+This starts:
+
+- `mlflow` – MLflow tracking server with a SQLite backend store (`mlruns.db`)
+  and local artifact root (`mlartifacts/`)
+- `api` – FastAPI service, configured to talk to the `mlflow` service
+- `ui` – Streamlit app that talks to the `api` service
+
+Once everything is healthy, you can visit:
+
+- MLflow UI: http://localhost:5000
+- FastAPI docs: http://localhost:8000/docs
+- Streamlit UI: http://localhost:8501
+
+### Run a one-off training job in Docker
+
+To train and register a new model against the same MLflow server used by
+`docker-compose`:
+
+```bash
+docker compose run --rm trainer
+```
+
+This will:
+
+- Generate synthetic churn data
+- Train the XGBoost model
+- Log metrics and artifacts to MLflow
+- Attempt to register/alias the model as `CustomerChurnModel` (e.g. `champion`)
+
+### Stop and clean up
+
+To stop the running services:
+
+```bash
+docker compose down
+```
+
+To remove containers, networks, and anonymous volumes:
+
+```bash
+docker compose down -v
+```
+
+Persisted MLflow data is stored in:
+
+- `mlruns.db` – SQLite database for the tracking backend
+- `mlartifacts/` – local directory used as the artifact store
+
+---
+
+## 7. Notes and Next Steps
 
 - The dataset is synthetic but structured to resemble telecom churn patterns and is entirely local.
 - The MLflow integration is minimal by design and can be extended with:
