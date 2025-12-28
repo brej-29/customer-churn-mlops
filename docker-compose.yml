@@ -1,0 +1,75 @@
+version: "3.9"
+
+services:
+  mlflow:
+    image: python:3.11-slim
+    container_name: churn-mlflow
+    working_dir: /app
+    volumes:
+      - ./mlruns.db:/app/mlruns.db
+      - ./mlartifacts:/app/mlartifacts
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    command: >
+      sh -c "
+      pip install --no-cache-dir mlflow &&
+      mlflow server
+        --backend-store-uri sqlite:///mlruns.db
+        --default-artifact-root /app/mlartifacts
+        --host 0.0.0.0
+        --port 5000
+      "
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; urllib.request.urlopen('http://localhost:5000').read(); sys.exit(0)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: churn-api
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - CHURN_MODEL_URI=models:/CustomerChurnModel@champion
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; urllib.request.urlopen('http://localhost:8000/health').read(); sys.exit(0)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  ui:
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    container_name: churn-ui
+    environment:
+      - API_BASE_URL=http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+
+  trainer:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: churn-trainer
+    command: ["python", "-m", "training.train"]
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - CHURN_MODEL_URI=models:/CustomerChurnModel@champion
+    depends_on:
+      mlflow:
+        condition: service_healthy

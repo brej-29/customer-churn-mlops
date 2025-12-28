@@ -11,3 +11,5 @@ requests
 pytest
 ruff
 httpx
+prometheus-fastapi-instrumentator
+evidently
