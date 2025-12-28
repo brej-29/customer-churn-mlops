@@ -147,28 +147,48 @@ You can change the API base URL from the sidebar if needed.
 
 ---
 
-## 4. Tests and Basic Lint
+## 4. Tests and Lint
 
-### Run tests
+### Run tests locally
+
+```bash
+python -m pytest -q
+```
+
+This runs the same tests as CI and currently exercises:
+
+- `/health`
+- `/predict` (ensures it returns a probability between 0 and 1)
+
+You can also run without `-q` for more verbose output:
 
 ```bash
 pytest
 ```
 
-This currently runs a basic smoke test against:
+### Run lint locally (ruff)
 
-- `/health`
-- `/predict` (ensures it returns a probability between 0 and 1)
+Install dependencies (including `ruff`) if you haven't already:
 
-### Basic lint / sanity check (no extra tools required)
+```bash
+pip install -r requirements.txt
+```
 
-A quick syntax check of all Python files:
+Then run ruff against the codebase:
+
+```bash
+ruff .
+```
+
+CI will fail if this step fails, so it's good practice to run it before pushing.
+
+### Optional: quick syntax check
+
+A quick syntax check of all Python files (also run in CI):
 
 ```bash
 python -m compileall .
 ```
-
-(For richer linting, you can optionally add tools like `ruff` or `flake8` to `requirements.txt` and run them here.)
 
 ---
 
