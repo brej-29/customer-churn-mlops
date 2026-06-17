@@ -205,3 +205,8 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# MLflow local tracking (regenerated on each training run)
+mlruns/
+mlartifacts/
+mlruns.db
