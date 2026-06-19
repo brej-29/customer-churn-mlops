@@ -12,7 +12,7 @@ def test_settings_defaults():
     assert str(s.telco_csv_path) == r"data\raw\telco_churn.csv" or str(
         s.telco_csv_path
     ) == "data/raw/telco_churn.csv"
-    assert str(s.mlflow_tracking_uri) == "file:./mlruns"
+    assert str(s.mlflow_tracking_uri) == "sqlite:///mlruns.db"
 
 
 def test_settings_env_override(monkeypatch):

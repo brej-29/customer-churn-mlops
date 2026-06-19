@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     data_processed_dir: Path = Path("data/processed")
     telco_csv_path: Path = Path("data/raw/telco_churn.csv")
 
-    # MLflow
-    mlflow_tracking_uri: str = "file:./mlruns"
+    # MLflow — SQLite backend; MLflow 3.x dropped the file-store backend.
+    mlflow_tracking_uri: str = "sqlite:///mlruns.db"
 
     @field_validator("data_raw_dir", "data_processed_dir", "telco_csv_path", mode="before")
     @classmethod
