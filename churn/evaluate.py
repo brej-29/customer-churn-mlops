@@ -49,6 +49,9 @@ class FinalModelResult:
     uncal_brier_oof: float        # OOF Brier for uncalibrated model
     cal_brier_oof: float          # OOF Brier for isotonic-calibrated model
     threshold_details: dict = field(default_factory=dict)  # cost curve info
+    # Set when log_to_mlflow=True; used by registry.py to register the model.
+    run_id: Optional[str] = None
+    model_uri: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -488,12 +491,16 @@ def build_final_model(
     print(f"Confusion matrix : TN={tn}  FP={fp_count}  FN={fn_count}  TP={tp}")
 
     # ── 8. MLflow ─────────────────────────────────────────────────────────
+    run_id_logged: Optional[str] = None
+    model_uri_logged: Optional[str] = None
+
     if log_to_mlflow:
         uri = tracking_uri or settings.mlflow_tracking_uri
         mlflow.set_tracking_uri(uri)
         mlflow.set_experiment(experiment_name)
 
-        with mlflow.start_run(run_name="final-model"):
+        with mlflow.start_run(run_name="final-model") as _active_run:
+            run_id_logged = _active_run.info.run_id
             # Calibration + threshold
             mlflow.log_param("calibration_method", calibration_method)
             mlflow.log_param("fn_cost", fn_cost)
@@ -537,6 +544,7 @@ def build_final_model(
                     "xgboost.sklearn.XGBClassifier",
                 ],
             )
+        model_uri_logged = f"runs:/{run_id_logged}/final_model"
 
     return FinalModelResult(
         model=final_model,
@@ -546,4 +554,6 @@ def build_final_model(
         uncal_brier_oof=uncal_info["brier"],
         cal_brier_oof=cal_info["brier"],
         threshold_details=cost_result,
+        run_id=run_id_logged,
+        model_uri=model_uri_logged,
     )

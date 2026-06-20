@@ -60,7 +60,7 @@ dev = [
 line-length = 100
 target-version = "py311"
 # Only lint new Tier-1 code; existing modules are linted by their own future PRs.
-include = ["churn/**/*.py", "tests/test_churn_*.py"]
+include = ["churn/**/*.py", "tests/test_churn_*.py", "api/**/*.py", "tests/test_api.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]

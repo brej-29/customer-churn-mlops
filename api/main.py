@@ -1,3 +1,6 @@
+"""Churn prediction API — serves the registered champion pipeline from the MLflow Model Registry."""
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -5,133 +8,179 @@ import sqlite3
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import mlflow
+import mlflow.sklearn
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, Request, Response
-from mlflow.exceptions import MlflowException
+from mlflow.tracking import MlflowClient
 from prometheus_fastapi_instrumentator import Instrumentator
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from training.preprocess import FEATURE_COLUMNS as TRAINING_FEATURE_COLUMNS
+from churn.config import settings
+from churn.data import ALL_FEATURES
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_NAME = "CustomerChurnModel"
-DEFAULT_MODEL_ALIAS = "champion"
-DEFAULT_MODEL_URI = f"models:/{DEFAULT_MODEL_NAME}@{DEFAULT_MODEL_ALIAS}"
-DEFAULT_TRACKING_URI = "file:./mlruns"
-DEFAULT_LOG_DB_PATH = "logs/predictions.db"
+CHAMPION_MODEL_NAME = "customer-churn-xgboost"
+CHAMPION_ALIAS = "champion"
+_THRESHOLD_FALLBACK_PATH = "reports/threshold.json"
 
-CHURN_MODEL_URI = os.getenv("CHURN_MODEL_URI", DEFAULT_MODEL_URI)
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", DEFAULT_TRACKING_URI)
-LOG_DB_PATH = os.getenv("LOG_DB_PATH", DEFAULT_LOG_DB_PATH)
-PROMETHEUS_ENABLED = os.getenv("PROMETHEUS_ENABLED", "true").lower() in {
-    "1",
-    "true",
-    "yes",
-}
-
-FEATURE_COLUMNS = TRAINING_FEATURE_COLUMNS
-
-INT_FEATURE_COLUMNS = [
-    "tenure",
-    "contract_type",
-    "has_internet",
-    "support_calls",
-    "is_senior",
-]
-
-FLOAT_FEATURE_COLUMNS = ["monthly_charges"]
+LOG_DB_PATH = os.getenv("LOG_DB_PATH", "logs/predictions.db")
+PROMETHEUS_ENABLED = os.getenv("PROMETHEUS_ENABLED", "true").lower() in {"1", "true", "yes"}
 
 
-def load_model() -> Any:
-    model_uri = CHURN_MODEL_URI
-    if not model_uri:
-        return None
-
-    if MLFLOW_TRACKING_URI:
-        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-
-    try:
-        model = mlflow.pyfunc.load_model(model_uri)
-        print(f"Loaded MLflow model from {model_uri}")
-        return model
-    except Exception as exc:  # noqa: BLE001
-        print(f"WARNING: Failed to load MLflow model from {model_uri}: {exc}")
-        return None
+# ---------------------------------------------------------------------------
+# Registry loader — injectable in tests via monkeypatch
+# ---------------------------------------------------------------------------
 
 
-def coerce_to_int64(field_name: str, value: Any) -> int:
-    try:
-        numeric_value = float(value)
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=f"{field_name} must be a numeric value (received {value!r})",
-        ) from exc
+def load_champion_model(tracking_uri: Optional[str] = None) -> tuple[Any, float, str]:
+    """Load champion pipeline, threshold, and version from the MLflow Model Registry.
 
-    if not np.isfinite(numeric_value):
-        raise HTTPException(
-            status_code=422,
-            detail=f"{field_name} must be a finite numeric value (received {value!r})",
+    Returns (model, threshold, version_str). Falls back to reports/threshold.json
+    if the registered version's threshold tag is absent. Raises on any failure;
+    the lifespan caller is responsible for error handling.
+    """
+    uri = tracking_uri or settings.mlflow_tracking_uri
+    mlflow.set_tracking_uri(uri)
+    client = MlflowClient()
+
+    mv = client.get_model_version_by_alias(CHAMPION_MODEL_NAME, CHAMPION_ALIAS)
+    version = str(mv.version)
+    tag_val = mv.tags.get("threshold")
+    if tag_val is not None:
+        threshold = float(tag_val)
+    else:
+        with open(_THRESHOLD_FALLBACK_PATH) as f:
+            threshold = json.load(f)["threshold"]
+        logger.warning(
+            "threshold tag absent from %s v%s; using fallback %s",
+            CHAMPION_MODEL_NAME, version, _THRESHOLD_FALLBACK_PATH,
         )
 
-    if abs(numeric_value - round(numeric_value)) > 1e-9:
-        raise HTTPException(
-            status_code=422,
-            detail=f"{field_name} must be an integer value (received {numeric_value})",
-        )
-
-    return int(round(numeric_value))
-
-
-def build_features(payload: "PredictRequest") -> pd.DataFrame:
-    """Build a single-row DataFrame with the exact dtypes expected by the MLflow model."""
-    data: Dict[str, Any] = {}
-    for column in FEATURE_COLUMNS:
-        if column in INT_FEATURE_COLUMNS:
-            raw_value = getattr(payload, column)
-            data[column] = coerce_to_int64(column, raw_value)
-        elif column in FLOAT_FEATURE_COLUMNS:
-            raw_value = getattr(payload, column)
-            try:
-                data[column] = float(raw_value)
-            except (TypeError, ValueError) as exc:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        f"{column} must be a floating-point numeric value "
-                        f"(received {raw_value!r})"
-                    ),
-                ) from exc
-        else:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Unexpected feature column '{column}' in API configuration.",
-            )
-
-    features = pd.DataFrame([data], columns=FEATURE_COLUMNS)
-    features = features.astype(
-        {
-            "tenure": "int64",
-            "contract_type": "int64",
-            "has_internet": "int64",
-            "support_calls": "int64",
-            "is_senior": "int64",
-            "monthly_charges": "float64",
-        }
+    model_uri = f"models:/{CHAMPION_MODEL_NAME}@{CHAMPION_ALIAS}"
+    model = mlflow.sklearn.load_model(model_uri)
+    print(
+        f"Loaded {CHAMPION_MODEL_NAME} v{version}"
+        f" (threshold={threshold:.4f}) from {model_uri}"
     )
-    return features
+    return model, threshold, version
+
+
+# ---------------------------------------------------------------------------
+# Lifespan
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        model, threshold, version = load_champion_model()
+        app.state.model = model
+        app.state.threshold = threshold
+        app.state.model_version = version
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to load champion model at startup: %s", exc)
+        app.state.model = None
+        app.state.threshold = None
+        app.state.model_version = None
+    yield
+
+
+app = FastAPI(title="Customer Churn Prediction API", lifespan=lifespan)
+
+if PROMETHEUS_ENABLED:
+    Instrumentator().instrument(app).expose(app)
+
+
+# ---------------------------------------------------------------------------
+# Request / Response schemas
+# ---------------------------------------------------------------------------
+
+
+class PredictRequest(BaseModel):
+    # Numeric features — pipeline expects float64
+    tenure: float = Field(ge=0.0, description="Months with the company")
+    MonthlyCharges: float = Field(ge=0.0, description="Current monthly bill")
+    TotalCharges: float = Field(ge=0.0, description="Total charges to date")
+
+    # SeniorCitizen is 0/1 in the raw data; pipeline stores it as string "0"/"1"
+    SeniorCitizen: Literal[0, 1]
+
+    # Categorical features — values must match the Telco training vocabulary exactly
+    gender: Literal["Female", "Male"]
+    Partner: Literal["No", "Yes"]
+    Dependents: Literal["No", "Yes"]
+    PhoneService: Literal["No", "Yes"]
+    MultipleLines: Literal["No", "No phone service", "Yes"]
+    InternetService: Literal["DSL", "Fiber optic", "No"]
+    OnlineSecurity: Literal["No", "No internet service", "Yes"]
+    OnlineBackup: Literal["No", "No internet service", "Yes"]
+    DeviceProtection: Literal["No", "No internet service", "Yes"]
+    TechSupport: Literal["No", "No internet service", "Yes"]
+    StreamingTV: Literal["No", "No internet service", "Yes"]
+    StreamingMovies: Literal["No", "No internet service", "Yes"]
+    Contract: Literal["Month-to-month", "One year", "Two year"]
+    PaperlessBilling: Literal["No", "Yes"]
+    PaymentMethod: Literal[
+        "Bank transfer (automatic)",
+        "Credit card (automatic)",
+        "Electronic check",
+        "Mailed check",
+    ]
+
+
+class PredictResponse(BaseModel):
+    churn_probability: float
+    churn_prediction: bool
+    threshold: float
+    model_version: str
+
+
+# ---------------------------------------------------------------------------
+# Feature builder
+# ---------------------------------------------------------------------------
+
+
+def build_features(payload: PredictRequest) -> pd.DataFrame:
+    """Build a single-row DataFrame matching the pipeline's expected raw input columns."""
+    row: Dict[str, Any] = {
+        "tenure": float(payload.tenure),
+        "MonthlyCharges": float(payload.MonthlyCharges),
+        "TotalCharges": float(payload.TotalCharges),
+        # SeniorCitizen: pipeline was trained on "0"/"1" strings (clean_telco casts all cats)
+        "gender": payload.gender,
+        "SeniorCitizen": str(payload.SeniorCitizen),
+        "Partner": payload.Partner,
+        "Dependents": payload.Dependents,
+        "PhoneService": payload.PhoneService,
+        "MultipleLines": payload.MultipleLines,
+        "InternetService": payload.InternetService,
+        "OnlineSecurity": payload.OnlineSecurity,
+        "OnlineBackup": payload.OnlineBackup,
+        "DeviceProtection": payload.DeviceProtection,
+        "TechSupport": payload.TechSupport,
+        "StreamingTV": payload.StreamingTV,
+        "StreamingMovies": payload.StreamingMovies,
+        "Contract": payload.Contract,
+        "PaperlessBilling": payload.PaperlessBilling,
+        "PaymentMethod": payload.PaymentMethod,
+    }
+    return pd.DataFrame([row], columns=ALL_FEATURES)
+
+
+# ---------------------------------------------------------------------------
+# Prediction logging
+# ---------------------------------------------------------------------------
 
 
 def _get_db_connection() -> sqlite3.Connection:
     db_dir = os.path.dirname(LOG_DB_PATH)
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
-
     conn = sqlite3.connect(LOG_DB_PATH)
     conn.execute(
         """
@@ -159,25 +208,16 @@ def log_prediction(
     status: str,
     error_message: Optional[str],
 ) -> None:
-    """Persist a single prediction event to SQLite.
-
-    Logging failures must never crash the API.
-    """
+    """Persist a prediction event to SQLite. Failures are swallowed so the API never crashes."""
     try:
         conn = _get_db_connection()
         with conn:
             conn.execute(
                 """
                 INSERT INTO prediction_logs (
-                    timestamp,
-                    request_payload,
-                    churn_probability,
-                    model_uri,
-                    latency_ms,
-                    status,
-                    error_message
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    timestamp, request_payload, churn_probability,
+                    model_uri, latency_ms, status, error_message
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     datetime.utcnow().isoformat(timespec="seconds"),
@@ -199,23 +239,15 @@ def log_prediction(
 
 
 def fetch_recent_logs(limit: int) -> List[Dict[str, Any]]:
-    """Return the most recent prediction logs, newest first."""
     try:
         conn = _get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(
             """
-            SELECT
-                timestamp,
-                request_payload,
-                churn_probability,
-                model_uri,
-                latency_ms,
-                status,
-                error_message
+            SELECT timestamp, request_payload, churn_probability,
+                   model_uri, latency_ms, status, error_message
             FROM prediction_logs
-            ORDER BY id DESC
-            LIMIT ?
+            ORDER BY id DESC LIMIT ?
             """,
             (int(limit),),
         )
@@ -235,7 +267,6 @@ def fetch_recent_logs(limit: int) -> List[Dict[str, Any]]:
             payload = json.loads(row["request_payload"])
         except Exception:  # noqa: BLE001
             payload = {}
-
         logs.append(
             {
                 "timestamp": row["timestamp"],
@@ -247,21 +278,17 @@ def fetch_recent_logs(limit: int) -> List[Dict[str, Any]]:
                 "error_message": row["error_message"],
             }
         )
-
     return logs
 
 
 def compute_stats(logs: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Compute simple summary statistics over recent prediction logs."""
     total = len(logs)
     success_count = sum(1 for log in logs if log.get("status") == "success")
     failure_count = total - success_count
     success_rate = float(success_count / total) if total > 0 else 0.0
 
     latencies = [
-        float(log["latency_ms"])
-        for log in logs
-        if log.get("latency_ms") is not None
+        float(log["latency_ms"]) for log in logs if log.get("latency_ms") is not None
     ]
     probabilities = [
         float(log["churn_probability"])
@@ -293,34 +320,20 @@ def compute_stats(logs: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    app.state.model = load_model()
-    yield
-
-
-app = FastAPI(title="Customer Churn Prediction API", lifespan=lifespan)
-
-if PROMETHEUS_ENABLED:
-    Instrumentator().instrument(app).expose(app)
-
-
-class PredictRequest(BaseModel):
-    tenure: float
-    monthly_charges: float
-    contract_type: float
-    has_internet: float
-    support_calls: float
-    is_senior: float
-
-
-class PredictResponse(BaseModel):
-    churn_probability: float
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 
 
 @app.get("/health")
-def health() -> Dict[str, str]:
-    return {"status": "ok"}
+def health(request: Request) -> Dict[str, Any]:
+    model = getattr(request.app.state, "model", None)
+    version = getattr(request.app.state, "model_version", None)
+    return {
+        "status": "ok",
+        "model_loaded": model is not None,
+        "model_version": version,
+    }
 
 
 @app.get("/stats")
@@ -341,6 +354,12 @@ def predict(
     response: Response,
 ) -> PredictResponse:
     model = getattr(request.app.state, "model", None)
+    threshold = getattr(request.app.state, "threshold", 0.5)
+    model_version = getattr(request.app.state, "model_version", "unknown")
+    model_uri = f"models:/{CHAMPION_MODEL_NAME}@{CHAMPION_ALIAS}"
+
+    if model is None:
+        raise HTTPException(status_code=503, detail="No model loaded.")
 
     start_time = time.perf_counter()
     probability: Optional[float] = None
@@ -349,80 +368,31 @@ def predict(
 
     try:
         features = build_features(request_data)
-
-        if model is None:
-            tenure = int(features.loc[0, "tenure"])
-            monthly_charges = float(features.loc[0, "monthly_charges"])
-            contract_type = int(features.loc[0, "contract_type"])
-            support_calls = int(features.loc[0, "support_calls"])
-            is_senior = int(features.loc[0, "is_senior"])
-
-            score = 0.2
-            if tenure < 12:
-                score += 0.2
-            if monthly_charges > 80:
-                score += 0.1
-            if support_calls >= 3:
-                score += 0.1
-            if contract_type == 0:
-                score += 0.1
-            if is_senior == 1:
-                score += 0.05
-            probability = max(0.0, min(0.95, score))
-        else:
-            try:
-                raw_pred = model.predict(features)
-            except MlflowException as exc:
-                logger.exception("MLflow model prediction failed.")
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        "Model prediction failed due to input schema or model error: "
-                        f"{exc}"
-                    ),
-                ) from exc
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("Unexpected error during model prediction.")
-                raise HTTPException(
-                    status_code=500,
-                    detail="Unexpected error during model prediction.",
-                ) from exc
-
-            if isinstance(raw_pred, (list, tuple, np.ndarray)):
-                arr = np.asarray(raw_pred)
-                if arr.ndim == 0:
-                    probability = float(arr)
-                elif arr.ndim == 1:
-                    probability = float(arr[0])
-                elif arr.ndim == 2 and arr.shape[1] == 1:
-                    probability = float(arr[0, 0])
-                elif arr.ndim == 2 and arr.shape[1] == 2:
-                    probability = float(arr[0, 1])
-                else:
-                    probability = float(arr.ravel()[0])
-            else:
-                probability = float(raw_pred)
-
-            probability = float(np.clip(probability, 0.0, 1.0))
-    except HTTPException as exc:
+        proba_arr = model.predict_proba(features)
+        probability = float(np.clip(proba_arr[0, 1], 0.0, 1.0))
+        churn_prediction = bool(probability >= threshold)
+    except Exception as exc:  # noqa: BLE001
         status = "fail"
-        error_message = str(exc.detail)
-        raise
-    except Exception:  # noqa: BLE001
-        status = "fail"
-        error_message = "Unexpected error during prediction."
-        logger.exception("Unhandled error in /predict.")
-        raise
+        error_message = str(exc)
+        logger.exception("Unexpected error in /predict.")
+        raise HTTPException(
+            status_code=500, detail="Unexpected error during prediction."
+        ) from exc
     finally:
         latency_ms = (time.perf_counter() - start_time) * 1000.0
         response.headers["X-Model-Latency-ms"] = f"{latency_ms:.3f}"
         log_prediction(
-            request_payload=request_data.dict(),
+            request_payload=request_data.model_dump(),
             churn_probability=probability,
-            model_uri=CHURN_MODEL_URI,
+            model_uri=model_uri,
             latency_ms=latency_ms,
             status=status,
             error_message=error_message,
         )
 
-    return PredictResponse(churn_probability=float(probability))
+    return PredictResponse(
+        churn_probability=probability,
+        churn_prediction=churn_prediction,
+        threshold=threshold,
+        model_version=str(model_version),
+    )
