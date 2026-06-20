@@ -1,0 +1,55 @@
+feature,mean_abs_shap
+cat__Contract_Month-to-month,0.62119246
+num__tenure,0.40332022
+cat__OnlineSecurity_No,0.24281615
+cat__InternetService_Fiber optic,0.19113933
+cat__TechSupport_No,0.17018013
+cat__PaymentMethod_Electronic check,0.16663688
+cat__Contract_Two year,0.15610118
+num__MonthlyCharges,0.1339579
+num__avg_monthly_spend,0.1272098
+cat__PaperlessBilling_No,0.11744826
+cat__MultipleLines_No,0.09605789
+num__TotalCharges,0.08759612
+cat__OnlineBackup_No,0.083704054
+num__spend_growth_ratio,0.056453656
+cat__StreamingMovies_Yes,0.052720744
+cat__StreamingTV_Yes,0.037298255
+cat__Dependents_No,0.034168664
+cat__SeniorCitizen_0,0.02963957
+cat__tenure_bucket_0-12,0.022286113
+cat__Contract_One year,0.019581776
+cat__DeviceProtection_No,0.012135462
+num__num_services,0.011544259
+cat__gender_Female,0.011132552
+cat__InternetService_DSL,0.011024117
+cat__PhoneService_No,0.009345808
+cat__PaperlessBilling_Yes,0.00807146
+cat__Dependents_Yes,0.0077042873
+cat__InternetService_No,0.007257214
+cat__TechSupport_Yes,0.005020124
+cat__PhoneService_Yes,0.0024147313
+cat__Partner_No,0.0023007372
+cat__StreamingTV_No,0.0022493778
+cat__OnlineBackup_Yes,0.0019548368
+cat__StreamingMovies_No,0.0016993991
+cat__MultipleLines_Yes,0.0015538646
+cat__DeviceProtection_Yes,0.0011083052
+cat__SeniorCitizen_1,0.0010348853
+cat__PaymentMethod_Bank transfer (automatic),0.0005137704
+cat__MultipleLines_No phone service,0.0
+cat__Partner_Yes,0.0
+cat__gender_Male,0.0
+cat__TechSupport_No internet service,0.0
+cat__OnlineSecurity_Yes,0.0
+cat__OnlineSecurity_No internet service,0.0
+cat__OnlineBackup_No internet service,0.0
+cat__DeviceProtection_No internet service,0.0
+cat__StreamingTV_No internet service,0.0
+cat__StreamingMovies_No internet service,0.0
+cat__PaymentMethod_Credit card (automatic),0.0
+cat__PaymentMethod_Mailed check,0.0
+cat__tenure_bucket_12-24,0.0
+cat__tenure_bucket_24-48,0.0
+cat__tenure_bucket_48-60,0.0
+cat__tenure_bucket_60-72,0.0
