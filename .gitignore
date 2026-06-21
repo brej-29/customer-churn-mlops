@@ -205,3 +205,18 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# MLflow local tracking (regenerated on each training run)
+mlruns/
+mlartifacts/
+mlruns.db
+
+# CatBoost training artifacts
+catboost_info/
+
+# Runtime logs (SQLite prediction log, etc.)
+logs/
+
+# Generated processed data (keep data/processed/.gitkeep tracked)
+data/processed/*
+!data/processed/.gitkeep

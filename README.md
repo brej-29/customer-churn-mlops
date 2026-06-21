@@ -36,6 +36,15 @@
 
 ---
 
+> **Tier 1 Modeling Rebuild in progress** (branch `tier1-modeling-rebuild`): a new multi-model
+> training layer (XGBoost, LightGBM, CatBoost, Optuna tuning, SHAP explainability) is being built
+> incrementally on this branch. Existing modules are unchanged.
+> To use the Telco Customer Churn dataset, download the CSV from
+> [Kaggle](https://www.kaggle.com/datasets/blastchar/telco-customer-churn) and place it at
+> `data/raw/telco_churn.csv` in the project root.
+
+---
+
 ## Project Structure
 
 ```text

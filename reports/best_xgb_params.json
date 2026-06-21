@@ -1,0 +1,16 @@
+{
+  "n_estimators": 661,
+  "learning_rate": 0.030816017044468066,
+  "max_depth": 3,
+  "min_child_weight": 4,
+  "subsample": 0.7300733288106989,
+  "colsample_bytree": 0.8918424713352255,
+  "gamma": 3.1877873567760657,
+  "reg_alpha": 3.53875886477924,
+  "reg_lambda": 0.0774211647399625,
+  "objective": "binary:logistic",
+  "eval_metric": "logloss",
+  "tree_method": "hist",
+  "random_state": 42,
+  "n_jobs": -1
+}

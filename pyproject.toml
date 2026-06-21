@@ -1,0 +1,75 @@
+[project]
+name = "customer-churn-mlops"
+version = "0.1.0"
+description = "Customer churn prediction MLOps platform"
+requires-python = ">=3.10,<3.12"
+
+dependencies = [
+    # Core data / ML
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "scikit-learn>=1.4",
+    "xgboost>=2.0",
+    "lightgbm>=4.3",
+    "catboost>=1.2",
+    "imbalanced-learn>=0.12",
+    "optuna>=3.6",
+    "shap>=0.45",
+    # MLflow
+    "mlflow>=2.13",
+    # API
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "httpx>=0.27",
+    "prometheus-fastapi-instrumentator>=7.0",
+    # UI
+    "streamlit>=1.35",
+    "requests>=2.32",
+    # Monitoring
+    "evidently>=0.4",
+    # Visualisation (dev/notebook)
+    "matplotlib>=3.8",
+    # Data validation
+    "pandera>=0.19",
+]
+
+[project.optional-dependencies]
+nn = [
+    "torch>=2.3",
+]
+dev = [
+    "pytest>=8.2",
+    "ruff>=0.4",
+    "jupyter>=1.0",
+    "nbconvert>=7.0",
+    "ipykernel>=6.0",
+    "seaborn>=0.13",
+    "locust>=2.29",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "ruff>=0.4",
+    "jupyter>=1.0",
+    "nbconvert>=7.0",
+    "ipykernel>=6.0",
+    "seaborn>=0.13",
+    "locust>=2.29",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Only lint new Tier-1 code; existing modules are linted by their own future PRs.
+include = ["churn/**/*.py", "tests/test_churn_*.py", "api/**/*.py", "tests/test_api.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

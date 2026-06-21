@@ -1,0 +1,23 @@
+{
+  "pr_auc": 0.6597442017254984,
+  "roc_auc": 0.847787336278385,
+  "brier": 0.13484887634039538,
+  "precision": 0.46175637393767704,
+  "recall": 0.8716577540106952,
+  "f1": 0.6037037037037037,
+  "confusion_matrix": [
+    [
+      655,
+      380
+    ],
+    [
+      48,
+      326
+    ]
+  ],
+  "threshold": 0.17412935323383083,
+  "calibration_method": "isotonic",
+  "oof_brier_uncalibrated": 0.13335521519184113,
+  "oof_brier_isotonic": 0.13326872408664012,
+  "cv_best_pr_auc": 0.670034
+}
