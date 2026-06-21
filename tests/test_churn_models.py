@@ -29,11 +29,11 @@ _FAST = dict(cv=2, sample_frac=0.15, log_to_mlflow=False)
 
 
 @pytest.fixture(scope="module")
-def fast_leaderboard():
+def fast_leaderboard(tmp_path_factory):
     """Run the leaderboard once with all candidates; cache for the module."""
     if not __import__("pathlib").Path("data/raw/telco_churn.csv").exists():
         pytest.skip("data/raw/telco_churn.csv not present")
-    return run_leaderboard(**_FAST)
+    return run_leaderboard(**_FAST, reports_dir=tmp_path_factory.mktemp("lb"))
 
 
 # ---------------------------------------------------------------------------
@@ -177,9 +177,9 @@ def test_xgboost_beats_dummy_pr_auc(fast_leaderboard):
 
 
 @_csv_present
-def test_leaderboard_is_deterministic():
-    lb_a = run_leaderboard(**_FAST)
-    lb_b = run_leaderboard(**_FAST)
+def test_leaderboard_is_deterministic(tmp_path):
+    lb_a = run_leaderboard(**_FAST, reports_dir=tmp_path / "ra")
+    lb_b = run_leaderboard(**_FAST, reports_dir=tmp_path / "rb")
     # Exclude fit_time_mean — it is wall-clock time and cannot be deterministic.
     metric_cols = [
         "model", "pr_auc_mean", "pr_auc_std",
@@ -196,7 +196,7 @@ def test_leaderboard_is_deterministic():
 
 
 @_csv_present
-def test_leaderboard_subset_models():
+def test_leaderboard_subset_models(tmp_path):
     from collections import OrderedDict
 
     from sklearn.dummy import DummyClassifier
@@ -208,7 +208,8 @@ def test_leaderboard_subset_models():
         ("dummy",   DummyClassifier(strategy="prior")),
         ("xgboost", XGBClassifier(eval_metric="logloss", random_state=SEED, n_jobs=-1)),
     ])
-    lb = run_leaderboard(cv=2, sample_frac=0.10, log_to_mlflow=False, models=subset)
+    lb = run_leaderboard(cv=2, sample_frac=0.10, log_to_mlflow=False, models=subset,
+                         reports_dir=tmp_path / "r")
     assert len(lb) == 2
     assert set(lb["model"]) == {"dummy", "xgboost"}
 
@@ -241,6 +242,7 @@ def test_mlflow_logging_creates_parent_and_child_runs(tmp_path):
         tracking_uri=tracking_uri,
         experiment_name="test-leaderboard",
         models=subset,
+        reports_dir=tmp_path / "r",
     )
 
     # Verify structure in the temp tracking store

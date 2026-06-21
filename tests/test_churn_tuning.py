@@ -116,26 +116,26 @@ def test_xgb_fixed_no_scale_pos_weight():
 
 @_csv_present
 def test_tune_returns_study(tmp_path):
-    study = tune_xgboost(**_FAST, params_out=tmp_path / "p.json")
+    study = tune_xgboost(**_FAST, params_out=tmp_path / "p.json", reports_dir=tmp_path / "r")
     assert isinstance(study, optuna.Study)
 
 
 @_csv_present
 def test_tune_best_value_in_range(tmp_path):
-    study = tune_xgboost(**_FAST, params_out=tmp_path / "p.json")
+    study = tune_xgboost(**_FAST, params_out=tmp_path / "p.json", reports_dir=tmp_path / "r")
     assert 0.0 <= study.best_value <= 1.0
     assert math.isfinite(study.best_value)
 
 
 @_csv_present
 def test_tune_best_params_keys(tmp_path):
-    study = tune_xgboost(**_FAST, params_out=tmp_path / "p.json")
+    study = tune_xgboost(**_FAST, params_out=tmp_path / "p.json", reports_dir=tmp_path / "r")
     assert set(study.best_params.keys()) == set(_TUNED_PARAM_KEYS)
 
 
 @_csv_present
 def test_tune_expected_trials(tmp_path):
-    study = tune_xgboost(**_FAST, params_out=tmp_path / "p.json")
+    study = tune_xgboost(**_FAST, params_out=tmp_path / "p.json", reports_dir=tmp_path / "r")
     assert len(study.trials) == _FAST["n_trials"]
 
 
@@ -147,14 +147,14 @@ def test_tune_expected_trials(tmp_path):
 @_csv_present
 def test_tune_json_written(tmp_path):
     params_path = tmp_path / "params.json"
-    tune_xgboost(**_FAST, params_out=params_path)
+    tune_xgboost(**_FAST, params_out=params_path, reports_dir=tmp_path / "r")
     assert params_path.exists()
 
 
 @_csv_present
 def test_tune_json_contains_tuned_keys(tmp_path):
     params_path = tmp_path / "params.json"
-    tune_xgboost(**_FAST, params_out=params_path)
+    tune_xgboost(**_FAST, params_out=params_path, reports_dir=tmp_path / "r")
     data = json.loads(params_path.read_text())
     for k in _TUNED_PARAM_KEYS:
         assert k in data, f"Tuned key '{k}' missing from JSON"
@@ -163,7 +163,7 @@ def test_tune_json_contains_tuned_keys(tmp_path):
 @_csv_present
 def test_tune_json_contains_fixed_keys(tmp_path):
     params_path = tmp_path / "params.json"
-    tune_xgboost(**_FAST, params_out=params_path)
+    tune_xgboost(**_FAST, params_out=params_path, reports_dir=tmp_path / "r")
     data = json.loads(params_path.read_text())
     for k in _XGB_FIXED:
         assert k in data, f"Fixed key '{k}' missing from JSON"
@@ -176,7 +176,7 @@ def test_tune_json_contains_fixed_keys(tmp_path):
 
 @_csv_present
 def test_tune_beats_base_rate(tmp_path):
-    study = tune_xgboost(**_FAST, params_out=tmp_path / "p.json")
+    study = tune_xgboost(**_FAST, params_out=tmp_path / "p.json", reports_dir=tmp_path / "r")
     assert study.best_value > 0.265, (
         f"best_value {study.best_value:.4f} does not exceed base-rate floor 0.265"
     )
@@ -189,8 +189,8 @@ def test_tune_beats_base_rate(tmp_path):
 
 @_csv_present
 def test_tune_deterministic(tmp_path):
-    a = tune_xgboost(**_FAST, params_out=tmp_path / "a.json")
-    b = tune_xgboost(**_FAST, params_out=tmp_path / "b.json")
+    a = tune_xgboost(**_FAST, params_out=tmp_path / "a.json", reports_dir=tmp_path / "r")
+    b = tune_xgboost(**_FAST, params_out=tmp_path / "b.json", reports_dir=tmp_path / "r")
     assert abs(a.best_value - b.best_value) < 1e-6, (
         f"Non-deterministic: {a.best_value:.8f} vs {b.best_value:.8f}"
     )
@@ -214,6 +214,7 @@ def test_tune_mlflow_creates_run(tmp_path):
         tracking_uri=tracking_uri,
         experiment_name="test-tuning",
         params_out=params_path,
+        reports_dir=tmp_path / "r",
     )
 
     mlflow.set_tracking_uri(tracking_uri)

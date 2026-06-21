@@ -43,6 +43,8 @@ dev = [
     "pytest>=8.2",
     "ruff>=0.4",
     "jupyter>=1.0",
+    "nbconvert>=7.0",
+    "ipykernel>=6.0",
     "seaborn>=0.13",
     "locust>=2.29",
 ]
@@ -52,6 +54,8 @@ dev = [
     "pytest>=8.2",
     "ruff>=0.4",
     "jupyter>=1.0",
+    "nbconvert>=7.0",
+    "ipykernel>=6.0",
     "seaborn>=0.13",
     "locust>=2.29",
 ]

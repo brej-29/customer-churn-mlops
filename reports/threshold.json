@@ -1,8 +1,8 @@
 {
-  "threshold": 0.208955223880597,
+  "threshold": 0.17412935323383083,
   "fn_cost": 5.0,
   "fp_cost": 1.0,
   "cost_ratio": "5:1",
-  "f1_threshold": 0.3034825870646766,
-  "calibration_method": "uncalibrated"
+  "f1_threshold": 0.27860696517412936,
+  "calibration_method": "isotonic"
 }

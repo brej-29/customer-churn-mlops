@@ -29,11 +29,11 @@ _FAST = dict(cv=2, sample_frac=0.2, log_to_mlflow=False)
 
 
 @pytest.fixture(scope="module")
-def fast_imbalance():
+def fast_imbalance(tmp_path_factory):
     """Run the experiment once at fast settings; cache for the module."""
     if not __import__("pathlib").Path("data/raw/telco_churn.csv").exists():
         pytest.skip("data/raw/telco_churn.csv not present")
-    return run_imbalance_experiment(**_FAST)
+    return run_imbalance_experiment(**_FAST, reports_dir=tmp_path_factory.mktemp("imb"))
 
 
 # ---------------------------------------------------------------------------
@@ -250,9 +250,9 @@ def test_structure_invalid_strategy_raises():
 
 
 @_csv_present
-def test_imbalance_deterministic():
-    a = run_imbalance_experiment(**_FAST)
-    b = run_imbalance_experiment(**_FAST)
+def test_imbalance_deterministic(tmp_path):
+    a = run_imbalance_experiment(**_FAST, reports_dir=tmp_path / "ra")
+    b = run_imbalance_experiment(**_FAST, reports_dir=tmp_path / "rb")
     metric_cols = [
         "strategy", "pr_auc_mean", "pr_auc_std",
         "roc_auc_mean", "roc_auc_std", "brier_mean", "brier_std",
@@ -280,6 +280,7 @@ def test_imbalance_mlflow_integration(tmp_path):
         tracking_uri=tracking_uri,
         experiment_name="test-imbalance",
         strategies=["none", "scale_pos_weight"],
+        reports_dir=tmp_path / "r",
     )
 
     mlflow.set_tracking_uri(tracking_uri)

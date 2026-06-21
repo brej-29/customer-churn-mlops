@@ -96,6 +96,7 @@ def run_leaderboard(
     tracking_uri: Optional[str] = None,
     experiment_name: str = "churn-leaderboard",
     models: Optional[dict] = None,
+    reports_dir: Optional[Path] = None,
 ) -> pd.DataFrame:
     """Cross-validate every candidate on the TRAIN split; return a sorted leaderboard.
 
@@ -208,9 +209,9 @@ def run_leaderboard(
     )
 
     # Persist leaderboard artifact
-    reports_dir = Path("reports")
-    reports_dir.mkdir(exist_ok=True)
-    leaderboard_path = reports_dir / "leaderboard.csv"
+    _reports = Path(reports_dir) if reports_dir is not None else Path("reports")
+    _reports.mkdir(exist_ok=True)
+    leaderboard_path = _reports / "leaderboard.csv"
     leaderboard.to_csv(leaderboard_path, index=False)
 
     if log_to_mlflow:
@@ -314,6 +315,7 @@ def run_imbalance_experiment(
     tracking_uri: Optional[str] = None,
     experiment_name: str = "churn-imbalance",
     strategies: Optional[list[str]] = None,
+    reports_dir: Optional[Path] = None,
 ) -> pd.DataFrame:
     """Cross-validate XGBoost under different imbalance-handling strategies.
 
@@ -426,9 +428,9 @@ def run_imbalance_experiment(
         .reset_index(drop=True)
     )
 
-    reports_dir = Path("reports")
-    reports_dir.mkdir(exist_ok=True)
-    result_path = reports_dir / "imbalance_experiment.csv"
+    _reports = Path(reports_dir) if reports_dir is not None else Path("reports")
+    _reports.mkdir(exist_ok=True)
+    result_path = _reports / "imbalance_experiment.csv"
     result.to_csv(result_path, index=False)
 
     # --- Recommendation ---

@@ -96,6 +96,7 @@ def run_fairness_analysis(
     tracking_uri: Optional[str] = None,
     experiment_name: str = "churn-fairness",
     build_final_model_kwargs: Optional[dict] = None,
+    reports_dir: Optional[Path] = None,
 ) -> dict:
     """Evaluate subgroup fairness on the TEST set using the final fitted model.
 
@@ -132,6 +133,8 @@ def run_fairness_analysis(
         model_result: FinalModelResult from build_final_model
     """
     kwargs = {**(build_final_model_kwargs or {}), "log_to_mlflow": False}
+    if reports_dir is not None and "threshold_out" not in kwargs:
+        kwargs["threshold_out"] = Path(reports_dir) / "threshold.json"
     result = build_final_model(**kwargs)
 
     _, X_test, _, y_test = get_splits()
@@ -184,16 +187,16 @@ def run_fairness_analysis(
 
     disparities = pd.DataFrame(disparity_rows)
 
-    reports_dir = Path("reports")
-    reports_dir.mkdir(exist_ok=True)
+    _reports = Path(reports_dir) if reports_dir is not None else Path("reports")
+    _reports.mkdir(exist_ok=True)
 
     saved_paths: list[Path] = []
     for feat, tbl in tables.items():
-        p = reports_dir / f"fairness_{feat}.csv"
+        p = _reports / f"fairness_{feat}.csv"
         tbl.to_csv(p, index=False)
         saved_paths.append(p)
 
-    disp_path = reports_dir / "fairness_disparities.csv"
+    disp_path = _reports / "fairness_disparities.csv"
     disparities.to_csv(disp_path, index=False)
     saved_paths.append(disp_path)
 

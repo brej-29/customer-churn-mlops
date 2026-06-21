@@ -18,94 +18,78 @@ N_FEATURES = 54  # 6 numeric + 48 OHE categorical
 
 
 # ---------------------------------------------------------------------------
+# Module-scoped fixture — compute SHAP once per test session
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def shap_result(tmp_path_factory):
+    """Run compute_shap once at fast settings; reused by all shape/key tests."""
+    if not Path("data/raw/telco_churn.csv").exists():
+        pytest.skip("data/raw/telco_churn.csv not present")
+    from churn.explain import compute_shap
+    return compute_shap(**_FAST, reports_dir=tmp_path_factory.mktemp("shap"))
+
+
+# ---------------------------------------------------------------------------
 # compute_shap — shape, no NaN, keys
 # ---------------------------------------------------------------------------
 
 
 @_csv_present
-def test_compute_shap_returns_required_keys():
-    from churn.explain import compute_shap
-
-    out = compute_shap(**_FAST)
-    assert set(out.keys()) == {"shap_values", "feature_names", "importance_df", "importance_agg"}
+def test_compute_shap_returns_required_keys(shap_result):
+    assert set(shap_result.keys()) == {"shap_values", "feature_names", "importance_df", "importance_agg"}
 
 
 @_csv_present
-def test_compute_shap_values_shape():
-    from churn.explain import compute_shap
-
-    out = compute_shap(**_FAST)
-    sv = out["shap_values"]
+def test_compute_shap_values_shape(shap_result):
+    sv = shap_result["shap_values"]
     assert sv.ndim == 2, f"Expected 2D shap_values, got shape {sv.shape}"
     assert sv.shape[1] == N_FEATURES, f"Expected {N_FEATURES} features, got {sv.shape[1]}"
     assert sv.shape[0] <= 300, f"Sample rows exceed sample_size=300: {sv.shape[0]}"
 
 
 @_csv_present
-def test_compute_shap_no_nans():
-    from churn.explain import compute_shap
-
-    out = compute_shap(**_FAST)
-    assert not np.isnan(out["shap_values"]).any(), "SHAP values contain NaN"
+def test_compute_shap_no_nans(shap_result):
+    assert not np.isnan(shap_result["shap_values"]).any(), "SHAP values contain NaN"
 
 
 @_csv_present
-def test_compute_shap_feature_names_length():
-    from churn.explain import compute_shap
-
-    out = compute_shap(**_FAST)
-    assert len(out["feature_names"]) == N_FEATURES
+def test_compute_shap_feature_names_length(shap_result):
+    assert len(shap_result["feature_names"]) == N_FEATURES
 
 
 @_csv_present
-def test_compute_shap_importance_df_length():
-    from churn.explain import compute_shap
-
-    out = compute_shap(**_FAST)
-    assert len(out["importance_df"]) == N_FEATURES
+def test_compute_shap_importance_df_length(shap_result):
+    assert len(shap_result["importance_df"]) == N_FEATURES
 
 
 @_csv_present
-def test_compute_shap_importance_df_sorted():
-    from churn.explain import compute_shap
-
-    out = compute_shap(**_FAST)
-    vals = out["importance_df"]["mean_abs_shap"].values
+def test_compute_shap_importance_df_sorted(shap_result):
+    vals = shap_result["importance_df"]["mean_abs_shap"].values
     assert (np.diff(vals) <= 0).all(), "importance_df is not sorted descending"
 
 
 @_csv_present
-def test_compute_shap_importance_df_non_negative():
-    from churn.explain import compute_shap
-
-    out = compute_shap(**_FAST)
-    assert (out["importance_df"]["mean_abs_shap"] >= 0).all()
+def test_compute_shap_importance_df_non_negative(shap_result):
+    assert (shap_result["importance_df"]["mean_abs_shap"] >= 0).all()
 
 
 @_csv_present
-def test_compute_shap_importance_agg_non_empty():
-    from churn.explain import compute_shap
-
-    out = compute_shap(**_FAST)
-    assert len(out["importance_agg"]) > 0
+def test_compute_shap_importance_agg_non_empty(shap_result):
+    assert len(shap_result["importance_agg"]) > 0
 
 
 @_csv_present
-def test_compute_shap_importance_agg_fewer_features():
+def test_compute_shap_importance_agg_fewer_features(shap_result):
     """Aggregating OHE columns must give fewer entries than N_FEATURES."""
-    from churn.explain import compute_shap
-
-    out = compute_shap(**_FAST)
-    assert len(out["importance_agg"]) < N_FEATURES
+    assert len(shap_result["importance_agg"]) < N_FEATURES
 
 
 @_csv_present
-def test_compute_shap_feature_names_prefixes():
+def test_compute_shap_feature_names_prefixes(shap_result):
     """All transformed feature names must start with 'num__' or 'cat__'."""
-    from churn.explain import compute_shap
-
-    out = compute_shap(**_FAST)
-    for name in out["feature_names"]:
+    for name in shap_result["feature_names"]:
         assert name.startswith("num__") or name.startswith("cat__"), (
             f"Unexpected feature name prefix: {name!r}"
         )
@@ -117,11 +101,11 @@ def test_compute_shap_feature_names_prefixes():
 
 
 @_csv_present
-def test_compute_shap_deterministic():
+def test_compute_shap_deterministic(tmp_path):
     from churn.explain import compute_shap
 
-    a = compute_shap(**_FAST)
-    b = compute_shap(**_FAST)
+    a = compute_shap(**_FAST, reports_dir=tmp_path / "ra")
+    b = compute_shap(**_FAST, reports_dir=tmp_path / "rb")
     np.testing.assert_allclose(
         a["shap_values"], b["shap_values"], atol=1e-6,
         err_msg="compute_shap is not deterministic across two calls with the same args",
@@ -145,6 +129,7 @@ def test_compute_shap_mlflow_integration(tmp_path):
         log_to_mlflow=True,
         tracking_uri=tracking_uri,
         experiment_name="test-explain",
+        reports_dir=tmp_path / "r",
     )
 
     mlflow.set_tracking_uri(tracking_uri)

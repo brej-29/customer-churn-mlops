@@ -66,6 +66,7 @@ def compute_shap(
     tracking_uri: Optional[str] = None,
     experiment_name: str = "churn-explain",
     params_path: str | Path = _DEFAULT_PARAMS_PATH,
+    reports_dir: Optional[Path] = None,
 ) -> dict:
     """Compute SHAP values for the tuned XGBoost model on a stratified TRAIN sample.
 
@@ -144,8 +145,8 @@ def compute_shap(
 
     importance_agg = _aggregate_to_original(mean_abs, feature_names)
 
-    reports_dir = Path("reports")
-    reports_dir.mkdir(exist_ok=True)
+    _reports = Path(reports_dir) if reports_dir is not None else Path("reports")
+    _reports.mkdir(exist_ok=True)
 
     # Plots — non-critical; wrapped in try/except.
     plot_paths: list[Path] = []
@@ -161,7 +162,7 @@ def compute_shap(
             max_display=20,
             show=False,
         )
-        beeswarm_path = reports_dir / "shap_beeswarm.png"
+        beeswarm_path = _reports / "shap_beeswarm.png"
         plt.savefig(beeswarm_path, bbox_inches="tight", dpi=120)
         plt.close("all")
         plot_paths.append(beeswarm_path)
@@ -174,7 +175,7 @@ def compute_shap(
             plot_type="bar",
             show=False,
         )
-        bar_path = reports_dir / "shap_bar.png"
+        bar_path = _reports / "shap_bar.png"
         plt.savefig(bar_path, bbox_inches="tight", dpi=120)
         plt.close("all")
         plot_paths.append(bar_path)
@@ -184,7 +185,7 @@ def compute_shap(
         importance_agg.head(20).sort_values().plot(kind="barh", ax=ax, color="steelblue")
         ax.set_xlabel("Mean |SHAP value|")
         ax.set_title("SHAP importance — original features (OHE aggregated)")
-        agg_path = reports_dir / "shap_bar_aggregated.png"
+        agg_path = _reports / "shap_bar_aggregated.png"
         fig.savefig(agg_path, bbox_inches="tight", dpi=120)
         plt.close("all")
         plot_paths.append(agg_path)
@@ -193,7 +194,7 @@ def compute_shap(
         pass
 
     # Save importance table.
-    importance_csv = reports_dir / "shap_importance.csv"
+    importance_csv = _reports / "shap_importance.csv"
     importance_df.to_csv(importance_csv, index=False)
 
     # Print summary.

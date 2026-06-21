@@ -168,6 +168,7 @@ def test_run_fairness_returns_dict(tmp_path):
         sensitive_features=["gender"],
         log_to_mlflow=False,
         build_final_model_kwargs=_FAST_KWARGS,
+        reports_dir=tmp_path / "r",
     )
     assert isinstance(out, dict)
     assert set(out.keys()) == {"tables", "disparities", "model_result"}
@@ -181,6 +182,7 @@ def test_run_fairness_tables_have_correct_columns(tmp_path):
         sensitive_features=["gender", "SeniorCitizen"],
         log_to_mlflow=False,
         build_final_model_kwargs=_FAST_KWARGS,
+        reports_dir=tmp_path / "r",
     )
     for feat, tbl in out["tables"].items():
         assert _EXPECTED_COLUMNS.issubset(set(tbl.columns)), (
@@ -197,6 +199,7 @@ def test_run_fairness_disparities_has_expected_columns(tmp_path):
         sensitive_features=["gender"],
         log_to_mlflow=False,
         build_final_model_kwargs=_FAST_KWARGS,
+        reports_dir=tmp_path / "r",
     )
     disp_cols = {"feature", "n_groups", "recall_min", "recall_max", "recall_gap",
                  "fpr_min", "fpr_max", "fpr_gap"}
@@ -212,6 +215,7 @@ def test_run_fairness_one_disparity_row_per_feature(tmp_path):
         sensitive_features=feats,
         log_to_mlflow=False,
         build_final_model_kwargs=_FAST_KWARGS,
+        reports_dir=tmp_path / "r",
     )
     assert len(out["disparities"]) == len(feats)
 
@@ -224,6 +228,7 @@ def test_run_fairness_disparity_gaps_non_negative(tmp_path):
         sensitive_features=["gender", "Partner"],
         log_to_mlflow=False,
         build_final_model_kwargs=_FAST_KWARGS,
+        reports_dir=tmp_path / "r",
     )
     for _, row in out["disparities"].iterrows():
         if not math.isnan(row["recall_gap"]):
@@ -241,6 +246,7 @@ def test_run_fairness_tables_keyed_by_feature(tmp_path):
         sensitive_features=feats,
         log_to_mlflow=False,
         build_final_model_kwargs=_FAST_KWARGS,
+        reports_dir=tmp_path / "r",
     )
     assert set(out["tables"].keys()) == set(feats)
 
@@ -263,6 +269,7 @@ def test_run_fairness_mlflow_integration(tmp_path):
         tracking_uri=tracking_uri,
         experiment_name="test-fairness",
         build_final_model_kwargs=dict(cv=2, sample_frac=0.15),
+        reports_dir=tmp_path / "r",
     )
 
     mlflow.set_tracking_uri(tracking_uri)

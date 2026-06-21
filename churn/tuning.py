@@ -172,6 +172,7 @@ def tune_xgboost(
     experiment_name: str = "churn-tuning",
     params_out: str | Path = "reports/best_xgb_params.json",
     timeout: Optional[float] = None,
+    reports_dir: Optional[Path] = None,
 ) -> optuna.Study:
     """Tune XGBoost hyperparameters with Optuna on the TRAIN split.
 
@@ -249,18 +250,18 @@ def tune_xgboost(
     params_path.write_text(json.dumps(best_combined, indent=2))
 
     # --- Compute importances ---
-    reports_dir = Path("reports")
-    reports_dir.mkdir(exist_ok=True)
+    _reports = Path(reports_dir) if reports_dir is not None else Path("reports")
+    _reports.mkdir(exist_ok=True)
 
     importances = _compute_importances(study)
 
-    importances_json = reports_dir / "xgb_param_importances.json"
+    importances_json = _reports / "xgb_param_importances.json"
     importances_json.write_text(
         json.dumps({k: float(v) for k, v in importances.items()}, indent=2)
     )
 
     # --- Save plots (non-critical) ---
-    plot_paths = _save_plots(study, reports_dir)
+    plot_paths = _save_plots(study, _reports)
 
     # --- Print summary ---
     print("\n=== XGBoost Tuning Results ===")

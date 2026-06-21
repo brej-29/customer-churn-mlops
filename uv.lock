@@ -740,8 +740,10 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "ipykernel" },
     { name = "jupyter" },
     { name = "locust" },
+    { name = "nbconvert" },
     { name = "pytest" },
     { name = "ruff" },
     { name = "seaborn" },
@@ -752,8 +754,10 @@ nn = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "ipykernel" },
     { name = "jupyter" },
     { name = "locust" },
+    { name = "nbconvert" },
     { name = "pytest" },
     { name = "ruff" },
     { name = "seaborn" },
@@ -766,11 +770,13 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.111" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "imbalanced-learn", specifier = ">=0.12" },
+    { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "jupyter", marker = "extra == 'dev'", specifier = ">=1.0" },
     { name = "lightgbm", specifier = ">=4.3" },
     { name = "locust", marker = "extra == 'dev'", specifier = ">=2.29" },
     { name = "matplotlib", specifier = ">=3.8" },
     { name = "mlflow", specifier = ">=2.13" },
+    { name = "nbconvert", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "optuna", specifier = ">=3.6" },
     { name = "pandas", specifier = ">=2.0" },
@@ -793,8 +799,10 @@ provides-extras = ["nn", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "ipykernel", specifier = ">=6.0" },
     { name = "jupyter", specifier = ">=1.0" },
     { name = "locust", specifier = ">=2.29" },
+    { name = "nbconvert", specifier = ">=7.0" },
     { name = "pytest", specifier = ">=8.2" },
     { name = "ruff", specifier = ">=0.4" },
     { name = "seaborn", specifier = ">=0.13" },
@@ -1316,7 +1324,7 @@ name = "gunicorn"
 version = "26.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "packaging" },
+    { name = "packaging", marker = "python_full_version < '3.11' or sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/6d/b7/a4a3f632f823e432ce6bc65f62961b7980c898c77f075a2f7118cb3846fe/gunicorn-26.0.0.tar.gz", hash = "sha256:ca9346f85e3a4aeeb64d491045c16b9a35647abd37ea15efe53080eb8b090baf", size = 727286, upload-time = "2026-05-05T06:38:25.529Z" }
 wheels = [
