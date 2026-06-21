@@ -135,6 +135,30 @@ def per_prediction_drivers(features: dict[str, Any], top_k: int = 5) -> DriverRe
     return DriverResult(probability=prob, drivers=drivers)
 
 
+# ── Driver value formatting ─────────────────────────────────────────────────────
+
+_DOLLAR_FEATURES: frozenset[str] = frozenset(
+    {"MonthlyCharges", "TotalCharges", "avg_monthly_spend"}
+)
+
+
+def _format_driver_value(feature: str, value: Any) -> str:
+    """Return a human-readable, unit-annotated string for a driver's raw value."""
+    if value is None:
+        return "N/A"
+    if feature == "tenure":
+        try:
+            return f"{int(round(float(value)))} months"
+        except (TypeError, ValueError):
+            return str(value)
+    if feature in _DOLLAR_FEATURES:
+        try:
+            return f"${float(value):.2f}"
+        except (TypeError, ValueError):
+            return str(value)
+    return str(value)
+
+
 # ── Prompt builders ─────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT = """\
@@ -189,10 +213,13 @@ def _build_user_message(
     ]
     for i, d in enumerate(drivers, 1):
         sign = "+" if d.shap_contribution > 0 else ""
+        formatted = _format_driver_value(d.feature, d.value)
         lines.append(
-            f"  {i}. {d.feature}: customer value = {d.value!r}"
+            f"  {i}. {d.feature}: customer value = {formatted}"
             f" | SHAP = {sign}{d.shap_contribution:.4f} ({d.direction} churn risk)"
         )
+
+    lines += ["", "Units: tenure is in months; MonthlyCharges, TotalCharges, and avg_monthly_spend are USD amounts."]
 
     if retrieved:
         lines += ["", "Retrieved retention playbook tactics (ground your recommendation in these):"]
