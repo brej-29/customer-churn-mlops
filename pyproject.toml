@@ -35,6 +35,9 @@ dependencies = [
     "pandera>=0.19",
     # GenAI — OpenAI-compatible client used for Gemini and Groq endpoints
     "openai>=1.0",
+    # RAG — semantic search over the retention-playbook corpus
+    "sentence-transformers>=2.7",
+    "faiss-cpu>=1.8",
 ]
 
 [project.optional-dependencies]
