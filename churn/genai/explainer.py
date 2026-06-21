@@ -163,13 +163,24 @@ def _format_driver_value(feature: str, value: Any) -> str:
 
 _SYSTEM_PROMPT = """\
 You are a customer retention analyst. Given SHAP-based churn risk drivers for one customer,
-explain why they are at risk of churning. Use ONLY the provided drivers — do NOT mention
-or invent any factor not in the list.
+explain why they are at risk of churning.
+
+STRICT RULES:
+- key_factors MUST contain only short phrases that name or directly paraphrase one of the
+  provided SHAP driver features. Every entry must map to a driver in the list below.
+  Do NOT introduce payment habits (autopay, auto-pay), customer value scores, loyalty
+  concepts, engagement metrics, or any term not explicitly listed as a SHAP driver.
+  Retrieved playbook tactics are for recommended_action — never for key_factors.
+- summary explains churn risk using the listed SHAP drivers only.
+- recommended_action is one concrete retention action.
+- citations must be an empty list [].
 
 Respond with a JSON object with exactly these keys:
   risk_level        : "low" | "medium" | "high"
   summary           : 2-3 sentences explaining the main churn drivers for this specific customer
-  key_factors       : list of short phrases, one per top driver
+  key_factors       : list of short phrases — ONE per SHAP driver, directly referencing that
+                      driver's feature name or a close paraphrase (e.g. "Month-to-month contract"
+                      for Contract, "High monthly bill" for MonthlyCharges). No invented factors.
   recommended_action: one concrete, specific retention action
   citations         : empty list []
 
@@ -180,15 +191,21 @@ _SYSTEM_PROMPT_RAG = """\
 You are a customer retention analyst. Given SHAP-based churn risk drivers and retrieved
 retention playbook tactics, explain why this customer is at risk and recommend an action.
 
-Rules:
-- Explain churn risk using ONLY the provided SHAP drivers.
-- Base recommended_action on one or more of the retrieved tactics; do not invent new tactics.
+STRICT RULES:
+- key_factors MUST contain only short phrases that name or directly paraphrase one of the
+  provided SHAP driver features. Every entry must map to a driver in the list below.
+  Do NOT introduce payment habits (autopay, auto-pay), customer value scores, loyalty
+  concepts, engagement metrics, or any playbook tactic as a key factor.
+  Playbook tactics belong ONLY in recommended_action.
+- summary explains churn risk using the listed SHAP drivers only.
+- recommended_action is where retrieved playbook tactics go; base it on the retrieved tactics.
 - Cite the exact source filenames you used in the citations field.
 
 Respond with a JSON object with exactly these keys:
   risk_level        : "low" | "medium" | "high"
   summary           : 2-3 sentences explaining the main churn drivers for this specific customer
-  key_factors       : list of short phrases, one per top driver
+  key_factors       : list of short phrases — ONE per SHAP driver, directly referencing that
+                      driver's feature name or a close paraphrase. No playbook concepts here.
   recommended_action: concrete retention action grounded in the retrieved tactics
   citations         : list of source filenames used, e.g. ["contract_upgrade.md"]
 
@@ -221,6 +238,13 @@ def _build_user_message(
 
     lines += ["", "Units: tenure is in months; MonthlyCharges, TotalCharges, and avg_monthly_spend are USD amounts."]
 
+    driver_names = ", ".join(d.feature for d in drivers)
+    lines += [
+        "",
+        f"CONSTRAINT: key_factors must reference ONLY these driver features (or close paraphrases): {driver_names}.",
+        "Do NOT add autopay, customer value, loyalty, long-term commitment, onboarding, or any term not in that list.",
+    ]
+
     if retrieved:
         lines += ["", "Retrieved retention playbook tactics (ground your recommendation in these):"]
         for r in retrieved:
@@ -232,6 +256,7 @@ def _build_user_message(
                 "",
             ]
         lines.append("List the source filenames you used in the citations field.")
+        lines.append("Reminder: playbook concepts go in recommended_action, NOT in key_factors.")
 
     lines += ["", "Return JSON only."]
     return "\n".join(lines)
@@ -284,6 +309,7 @@ def explain_prediction(
     top_k: int = 5,
     use_rag: bool | None = None,
     _rag_embedder: Any = None,
+    _calibrated_probability: float | None = None,
 ) -> tuple[ChurnExplanation, dict[str, Any]]:
     """Generate a grounded churn explanation for one customer.
 
@@ -300,16 +326,28 @@ def explain_prediction(
     _rag_embedder :
         Inject a custom embedder (for tests). When provided, the module-level
         FAISS cache is bypassed and a fresh index is built with this embedder.
+    _calibrated_probability :
+        When provided, use this probability for risk_level and the prompt headline
+        instead of the uncalibrated SHAP model's probability. Pass the champion
+        model's calibrated probability here so the explanation's risk_level is
+        consistent with what /predict returns.
 
     Returns
     -------
     (explanation, metadata)
         explanation : validated ChurnExplanation (includes citations list).
-        metadata    : dict with keys ``provider``, ``model``, and ``probability``.
+        metadata    : dict with keys ``provider``, ``model``, ``probability``,
+                      ``shap_probability`` (when calibrated differs), and
+                      ``ungrounded_factors`` (key_factors that failed Tier-1 check).
     """
     result = per_prediction_drivers(features, top_k=top_k)
-    prob, drivers = result.probability, result.drivers
+    shap_prob, drivers = result.probability, result.drivers
+
+    # Use calibrated probability for prompt + risk_level when the champion provides it.
+    prob = _calibrated_probability if _calibrated_probability is not None else shap_prob
     meta: dict[str, Any] = {"probability": prob}
+    if _calibrated_probability is not None:
+        meta["shap_probability"] = shap_prob
 
     # ── RAG retrieval ─────────────────────────────────────────────────────────
     retrieved: list = []
@@ -333,7 +371,7 @@ def explain_prediction(
 
     # ── LLM or fallback path ─────────────────────────────────────────────────
     if not settings.explanation_enabled:
-        meta |= {"provider": "fallback", "model": "fallback"}
+        meta |= {"provider": "fallback", "model": "fallback", "ungrounded_factors": []}
         return _fallback_explanation(prob, drivers, retrieved=retrieved), meta
 
     system = _SYSTEM_PROMPT_RAG if retrieved else _SYSTEM_PROMPT
@@ -343,7 +381,21 @@ def explain_prediction(
         raw = json.loads(completion.text)
         explanation = ChurnExplanation(**raw)
         meta |= {"provider": completion.provider, "model": completion.model}
-        return explanation, meta
     except Exception:
         meta |= {"provider": "fallback", "model": "fallback"}
-        return _fallback_explanation(prob, drivers, retrieved=retrieved), meta
+        explanation = _fallback_explanation(prob, drivers, retrieved=retrieved)
+
+    # Lightweight Tier-1 grounding check — surfaces any key_factor that doesn't
+    # reference a SHAP driver. Informational only; nothing is dropped.
+    try:
+        from churn.genai.eval import _factor_matches_driver  # noqa: PLC0415
+
+        ungrounded = [
+            f for f in explanation.key_factors
+            if not any(_factor_matches_driver(f, d) for d in drivers)
+        ]
+    except Exception:
+        ungrounded = []
+    meta["ungrounded_factors"] = ungrounded
+
+    return explanation, meta
