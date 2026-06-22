@@ -531,9 +531,15 @@ def build_final_model(
             signature = infer_signature(
                 X_train, final_model.predict_proba(X_train.head(5))
             )
-            mlflow.sklearn.log_model(
+            # artifact_path= is used (not name=) for compatibility with hosted
+            # MLflow backends (e.g. DagsHub) that pre-date the MLflow 3.x
+            # LoggedModel API (/api/2.0/mlflow/logged-models/search).  Using
+            # name= causes the model artifact to be silently skipped on those
+            # servers.  model_info.model_uri is captured so register_model gets
+            # the actual storage URI rather than a manually-constructed string.
+            model_info = mlflow.sklearn.log_model(
                 sk_model=final_model,
-                name="final_model",
+                artifact_path="final_model",
                 signature=signature,
                 input_example=X_train.head(5),
                 skops_trusted_types=[
@@ -544,7 +550,7 @@ def build_final_model(
                     "xgboost.sklearn.XGBClassifier",
                 ],
             )
-        model_uri_logged = f"runs:/{run_id_logged}/final_model"
+        model_uri_logged = model_info.model_uri
 
     return FinalModelResult(
         model=final_model,
