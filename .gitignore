@@ -220,3 +220,11 @@ logs/
 # Generated processed data (keep data/processed/.gitkeep tracked)
 data/processed/*
 !data/processed/.gitkeep
+
+# FAISS index files (built in-memory at runtime; never commit to repo)
+*.faiss
+*.index
+
+# sentence-transformers / HuggingFace model cache (if ever materialised locally)
+sentence_transformers/
+.cache/huggingface/

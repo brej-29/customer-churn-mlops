@@ -346,3 +346,130 @@ def test_recent_endpoint_returns_prediction_fields(client_real):
     log = logs[0]
     for key in ["timestamp", "request_payload", "churn_probability", "latency_ms", "status"]:
         assert key in log
+
+
+# ---------------------------------------------------------------------------
+# 9. /explain endpoint
+# ---------------------------------------------------------------------------
+
+_EXPLAIN_FIELDS = {
+    "churn_probability", "threshold", "model_version",
+    "risk_level", "summary", "key_factors", "recommended_action",
+    "citations", "provider", "ungrounded_factors",
+}
+
+# Shared mock ChurnExplanation returned by the stubbed _get_explanation.
+def _mock_explanation(features, calibrated_prob, top_k=5):
+    from churn.genai.explainer import ChurnExplanation
+    expl = ChurnExplanation(
+        risk_level="high" if calibrated_prob > 0.5 else "low",
+        summary="Mock summary for testing.",
+        key_factors=["Contract: Month-to-month"],
+        recommended_action="Offer a discount.",
+        citations=[],
+    )
+    return expl, {"provider": "mock-llm", "model": "mock", "probability": calibrated_prob, "ungrounded_factors": []}
+
+
+@_csv_present
+def test_explain_200_schema(client_real, monkeypatch):
+    """POST /explain returns 200 with all required fields."""
+    import api.main as api_module
+    monkeypatch.setattr(api_module, "_get_explanation", _mock_explanation)
+    response = client_real.post("/explain", json=VALID_PAYLOAD)
+    assert response.status_code == 200
+    assert _EXPLAIN_FIELDS.issubset(response.json().keys())
+
+
+@_csv_present
+def test_explain_probability_matches_predict(client_real, monkeypatch):
+    """churn_probability in /explain must equal /predict for the same input."""
+    import api.main as api_module
+    monkeypatch.setattr(api_module, "_get_explanation", _mock_explanation)
+    predict_prob = client_real.post("/predict", json=VALID_PAYLOAD).json()["churn_probability"]
+    explain_prob = client_real.post("/explain", json=VALID_PAYLOAD).json()["churn_probability"]
+    assert abs(predict_prob - explain_prob) < 1e-6
+
+
+@_csv_present
+def test_explain_threshold_and_version_match_predict(client_real, monkeypatch):
+    """threshold and model_version in /explain must match /predict."""
+    import api.main as api_module
+    monkeypatch.setattr(api_module, "_get_explanation", _mock_explanation)
+    pred = client_real.post("/predict", json=VALID_PAYLOAD).json()
+    expl = client_real.post("/explain", json=VALID_PAYLOAD).json()
+    assert abs(pred["threshold"] - expl["threshold"]) < 1e-6
+    assert pred["model_version"] == expl["model_version"]
+
+
+@_csv_present
+def test_explain_provider_field_returned(client_real, monkeypatch):
+    """provider field must be present and equal what _get_explanation returns."""
+    import api.main as api_module
+    monkeypatch.setattr(api_module, "_get_explanation", _mock_explanation)
+    data = client_real.post("/explain", json=VALID_PAYLOAD).json()
+    assert data["provider"] == "mock-llm"
+
+
+@_csv_present
+def test_explain_llm_failure_returns_200_with_fallback(client_real, monkeypatch):
+    """When _get_explanation raises, /explain must return 200 with provider='fallback'."""
+    import api.main as api_module
+
+    def _failing(features, calibrated_prob, top_k=5):
+        raise RuntimeError("Simulated LLM failure")
+
+    monkeypatch.setattr(api_module, "_get_explanation", _failing)
+    response = client_real.post("/explain", json=VALID_PAYLOAD)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["provider"] == "fallback"
+    assert _EXPLAIN_FIELDS.issubset(data.keys())
+
+
+@_csv_present
+def test_explain_fallback_probability_still_correct(client_real, monkeypatch):
+    """Even when LLM fails, /explain must return the champion's calibrated probability."""
+    import api.main as api_module
+
+    def _failing(features, calibrated_prob, top_k=5):
+        raise RuntimeError("Simulated LLM failure")
+
+    monkeypatch.setattr(api_module, "_get_explanation", _failing)
+    predict_prob = client_real.post("/predict", json=VALID_PAYLOAD).json()["churn_probability"]
+    explain_prob = client_real.post("/explain", json=VALID_PAYLOAD).json()["churn_probability"]
+    assert abs(predict_prob - explain_prob) < 1e-6
+
+
+@_csv_present
+def test_explain_503_no_model(client_no_model):
+    """When no champion model is loaded, /explain returns 503."""
+    response = client_no_model.post("/explain", json=VALID_PAYLOAD)
+    assert response.status_code == 503
+    assert "No model loaded" in response.json()["detail"]
+
+
+@_csv_present
+def test_explain_ungrounded_factors_is_list(client_real, monkeypatch):
+    """ungrounded_factors must always be a list (empty is fine)."""
+    import api.main as api_module
+    monkeypatch.setattr(api_module, "_get_explanation", _mock_explanation)
+    data = client_real.post("/explain", json=VALID_PAYLOAD).json()
+    assert isinstance(data["ungrounded_factors"], list)
+
+
+@_csv_present
+def test_explain_key_factors_is_list(client_real, monkeypatch):
+    import api.main as api_module
+    monkeypatch.setattr(api_module, "_get_explanation", _mock_explanation)
+    data = client_real.post("/explain", json=VALID_PAYLOAD).json()
+    assert isinstance(data["key_factors"], list)
+
+
+def test_explain_422_bad_input():
+    """Invalid payload to /explain returns 422 (Pydantic validation)."""
+    import api.main as api_module
+    client = TestClient(api_module.app)
+    bad = {**VALID_PAYLOAD, "Contract": "enterprise"}
+    response = client.post("/explain", json=bad)
+    assert response.status_code == 422

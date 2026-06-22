@@ -140,6 +140,22 @@ class PredictResponse(BaseModel):
     model_version: str
 
 
+class ExplainResponse(BaseModel):
+    # Champion-consistent fields — identical to /predict for the same input
+    churn_probability: float
+    threshold: float
+    model_version: str
+    # Explanation fields from ChurnExplanation
+    risk_level: str
+    summary: str
+    key_factors: List[str]
+    recommended_action: str
+    citations: List[str]
+    # Observability
+    provider: str
+    ungrounded_factors: List[str]
+
+
 # ---------------------------------------------------------------------------
 # Feature builder
 # ---------------------------------------------------------------------------
@@ -321,6 +337,28 @@ def compute_stats(logs: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Explanation helper — defined at module level so tests can monkeypatch it
+# ---------------------------------------------------------------------------
+
+
+def _get_explanation(
+    features: Dict[str, Any],
+    calibrated_prob: float,
+    top_k: int = 5,
+) -> tuple:
+    """Call explain_prediction with the champion's calibrated probability.
+
+    Defined here (not inside the endpoint) so tests can monkeypatch this
+    function without importing churn.genai at collection time.
+    """
+    from churn.genai.explainer import explain_prediction  # noqa: PLC0415
+
+    return explain_prediction(
+        features, top_k=top_k, _calibrated_probability=calibrated_prob
+    )
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
@@ -396,3 +434,62 @@ def predict(
         threshold=threshold,
         model_version=str(model_version),
     )
+
+
+@app.post("/explain", response_model=ExplainResponse)
+def explain(
+    request_data: PredictRequest,
+    request: Request,
+) -> ExplainResponse:
+    """Generate a grounded LLM explanation for a churn prediction.
+
+    Probability and threshold come from the champion model (same as /predict).
+    The SHAP drivers and narrative come from the explanation layer.
+    risk_level is derived from the champion's calibrated probability so it is
+    consistent with the /predict result for the same input.
+
+    Always returns 200 — falls back to a deterministic explanation on any
+    LLM or SHAP failure. Returns 503 only when no champion model is loaded.
+    """
+    model = getattr(request.app.state, "model", None)
+    threshold = getattr(request.app.state, "threshold", 0.5)
+    model_version = getattr(request.app.state, "model_version", "unknown")
+
+    if model is None:
+        raise HTTPException(status_code=503, detail="No model loaded.")
+
+    features_df = build_features(request_data)
+    calibrated_prob = float(np.clip(model.predict_proba(features_df)[0, 1], 0.0, 1.0))
+    features_dict = features_df.iloc[0].to_dict()
+
+    # Derive risk_level from calibrated probability so headline is consistent.
+    _risk: str = "high" if calibrated_prob > 0.5 else "medium" if calibrated_prob > 0.3 else "low"
+
+    try:
+        expl, meta = _get_explanation(features_dict, calibrated_prob)
+        return ExplainResponse(
+            churn_probability=calibrated_prob,
+            threshold=float(threshold),
+            model_version=str(model_version),
+            risk_level=expl.risk_level,
+            summary=expl.summary,
+            key_factors=expl.key_factors,
+            recommended_action=expl.recommended_action,
+            citations=expl.citations,
+            provider=meta.get("provider", "fallback"),
+            ungrounded_factors=meta.get("ungrounded_factors", []),
+        )
+    except Exception:
+        logger.exception("/explain: explanation generation failed; returning deterministic fallback.")
+        return ExplainResponse(
+            churn_probability=calibrated_prob,
+            threshold=float(threshold),
+            model_version=str(model_version),
+            risk_level=_risk,
+            summary="Detailed explanation unavailable.",
+            key_factors=[],
+            recommended_action="Contact the customer for a proactive check-in.",
+            citations=[],
+            provider="fallback",
+            ungrounded_factors=[],
+        )

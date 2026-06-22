@@ -33,7 +33,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Compile all Python files
-        run: uv run python -m compileall .
+        run: uv run python -m compileall -q churn api ui training tests monitoring loadtest
 
       - name: Run tests
         run: uv run pytest -q
