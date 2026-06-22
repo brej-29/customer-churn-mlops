@@ -136,6 +136,7 @@ def clean_telco(df: pd.DataFrame) -> pd.DataFrame:
 def load_clean_telco(
     csv_path: Path | None = None,
     save: bool = True,
+    validate: bool = True,
 ) -> pd.DataFrame:
     """Load raw CSV, clean it, and optionally persist to data/processed/.
 
@@ -146,9 +147,17 @@ def load_clean_telco(
     save:
         If True (default), write the cleaned frame to
         settings.data_processed_dir / 'telco_clean.csv' for inspection.
+    validate:
+        If True (default), run the Pandera data contract on the cleaned frame.
+        Pass False in offline tests or performance-critical paths where the
+        data is already trusted.
     """
     df = load_telco_raw(csv_path=csv_path)
     df = clean_telco(df)
+    if validate:
+        from churn.validation import validate_clean  # noqa: PLC0415
+
+        df = validate_clean(df)
     if save:
         out = settings.data_processed_dir / "telco_clean.csv"
         out.parent.mkdir(parents=True, exist_ok=True)
