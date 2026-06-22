@@ -28,7 +28,7 @@ dependencies = [
     "streamlit>=1.35",
     "requests>=2.32",
     # Monitoring
-    "evidently>=0.4",
+    "evidently==0.7.21",
     # Visualisation (dev/notebook)
     "matplotlib>=3.8",
     # Data validation
