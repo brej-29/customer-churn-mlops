@@ -1,0 +1,47 @@
+# ── Stage 1: builder ─────────────────────────────────────────────────────────
+# Minimal install — UI only calls the API over HTTP; no ML libs needed.
+FROM python:3.11-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /build
+
+COPY requirements-ui.txt ./
+
+RUN python -m venv /opt/venv \
+ && /opt/venv/bin/pip install --no-cache-dir -r requirements-ui.txt
+
+
+# ── Stage 2: runtime ─────────────────────────────────────────────────────────
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH=/app \
+    # Default API endpoint — override at runtime via -e API_BASE_URL=...
+    API_BASE_URL=http://localhost:7860
+
+WORKDIR /app
+
+RUN groupadd -r churn && useradd -r -g churn -d /app churn
+
+COPY --from=builder /opt/venv /opt/venv
+
+# Only copy UI source — deliberately excludes churn/, api/, data/, reports/.
+COPY ui/ ui/
+
+USER churn
+
+EXPOSE 7860
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD python -c \
+        "import urllib.request; urllib.request.urlopen('http://localhost:7860/_stcore/health')" \
+        || exit 1
+
+CMD ["streamlit", "run", "ui/app.py", \
+     "--server.port=7860", \
+     "--server.address=0.0.0.0", \
+     "--server.headless=true"]

@@ -5,35 +5,105 @@ on:
   pull_request:
 
 jobs:
-  test:
-    name: Lint and Test (Python ${{ matrix.python-version }})
+  # ── Job 1: lint + offline tests ───────────────────────────────────────────
+  lint-test:
+    name: Lint & Test
     runs-on: ubuntu-latest
 
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11"]
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
 
-      - name: Set up Python
-        run: uv python install ${{ matrix.python-version }}
+      - name: Set up Python 3.11
+        run: uv python install 3.11
 
       - name: Install dependencies
         run: uv sync --all-groups
+
+      # DagsHub S3 remote uses the DagsHub username as AWS_ACCESS_KEY_ID and the
+      # token as AWS_SECRET_ACCESS_KEY.  dvc-s3 picks these up automatically.
+      - name: Pull dataset via DVC
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_USER }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DAGSHUB_TOKEN }}
+        run: uv run dvc pull
 
       - name: Lint with ruff
         run: uv run ruff check .
 
       - name: Compile all Python files
-        run: uv run python -m compileall -q churn api ui training tests monitoring loadtest
+        run: >
+          uv run python -m compileall -q
+          churn api ui training tests monitoring loadtest scripts
 
-      - name: Run tests
+      # Run without API keys so GenAI/RAG tests exercise offline/mock paths only.
+      - name: Run tests (offline — no API keys)
         run: uv run pytest -q
+
+  # ── Job 2: docker builds ──────────────────────────────────────────────────
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -f Dockerfile.api -t churn-api:ci .
+
+      - name: Build UI image
+        run: docker build -f Dockerfile.ui -t churn-ui:ci .
+
+      # Confirm the UI image is genuinely slim — torch and the full ML stack
+      # must not be present (the UI delegates all inference to the API over HTTP).
+      - name: Confirm UI image has no ML/torch packages
+        run: |
+          docker run --rm churn-ui:ci python - <<'EOF'
+          import importlib.util
+          banned = ["torch", "xgboost", "sklearn", "sentence_transformers", "faiss"]
+          found = [p for p in banned if importlib.util.find_spec(p) is not None]
+          if found:
+              print(f"FAIL: unexpected packages in UI image: {found}")
+              raise SystemExit(1)
+          print("PASS: no ML packages in UI image")
+          EOF
+
+  # ── Job 3: champion model-quality gate ────────────────────────────────────
+  model-quality-gate:
+    name: Model Quality Gate
+    runs-on: ubuntu-latest
+    needs: lint-test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Pull dataset via DVC
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_USER }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DAGSHUB_TOKEN }}
+        run: uv run dvc pull
+
+      # Load models:/customer-churn-xgboost@champion from DagsHub, score it on
+      # the held-out test split, and assert PR-AUC >= 0.60.  Exit 1 on failure
+      # so the job blocks the PR merge.
+      - name: Check champion model quality
+        env:
+          MLFLOW_TRACKING_URI: https://dagshub.com/brej-29/customer-churn-mlops.mlflow
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USER }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+        run: uv run python scripts/check_champion_quality.py

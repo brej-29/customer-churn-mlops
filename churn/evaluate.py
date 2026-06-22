@@ -534,10 +534,12 @@ def build_final_model(
             # artifact_path= is used (not name=) for compatibility with hosted
             # MLflow backends (e.g. DagsHub) that pre-date the MLflow 3.x
             # LoggedModel API (/api/2.0/mlflow/logged-models/search).  Using
-            # name= causes the model artifact to be silently skipped on those
-            # servers.  model_info.model_uri is captured so register_model gets
-            # the actual storage URI rather than a manually-constructed string.
-            model_info = mlflow.sklearn.log_model(
+            # name= on those servers causes the model artifact to be silently
+            # skipped.  model_info.model_uri in MLflow 3.x returns the new
+            # LoggedModel format (models:/m-<uuid>) rather than the runs:/ path,
+            # so we construct the URI explicitly — with artifact_path= the model
+            # IS stored at runs:/<run_id>/final_model on every backend.
+            mlflow.sklearn.log_model(
                 sk_model=final_model,
                 artifact_path="final_model",
                 signature=signature,
@@ -550,7 +552,7 @@ def build_final_model(
                     "xgboost.sklearn.XGBClassifier",
                 ],
             )
-        model_uri_logged = model_info.model_uri
+        model_uri_logged = f"runs:/{run_id_logged}/final_model"
 
     return FinalModelResult(
         model=final_model,

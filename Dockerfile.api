@@ -1,0 +1,63 @@
+# ── Stage 1: builder ─────────────────────────────────────────────────────────
+# Installs all Python deps into a venv that is copied to the slim runtime stage.
+FROM python:3.11-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /build
+
+# uv is only needed in the builder to export a pip-compatible requirements file.
+RUN pip install --no-cache-dir uv
+
+# Copy dependency manifests before source so Docker layer-caches the install
+# step when only code changes.
+COPY pyproject.toml uv.lock ./
+
+# Export all non-dev pinned deps to a standard requirements.txt, then install
+# into an isolated venv.  sentence-transformers pulls torch, so this layer is
+# large (~2 GB) but is cached across rebuilds that touch only app code.
+RUN uv export --no-dev --frozen -o /tmp/requirements.txt \
+ && python -m venv /opt/venv \
+ && /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt
+
+
+# ── Stage 2: runtime ─────────────────────────────────────────────────────────
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    # Put the venv on PATH so every python/pip call uses it without activation.
+    PATH="/opt/venv/bin:$PATH" \
+    # Make churn/ and api/ importable without a package install.
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+# Non-root user — drop privileges before the server starts.
+RUN groupadd -r churn && useradd -r -g churn -d /app churn
+
+# Copy only the venv (no build tools, no uv, no temp files).
+COPY --from=builder /opt/venv /opt/venv
+
+# Application code.  Copy explicit directories so stray local files (logs/,
+# mlruns/, .env) never enter the image even if .dockerignore is incomplete.
+COPY churn/ churn/
+COPY api/ api/
+COPY data/playbooks/ data/playbooks/
+# reports/threshold.json is the fallback threshold when the registry tag is absent.
+COPY reports/ reports/
+
+USER churn
+
+EXPOSE 7860
+
+# Lightweight health probe — no shell required.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c \
+        "import urllib.request; urllib.request.urlopen('http://localhost:7860/health')" \
+        || exit 1
+
+# Champion model + MLflow auth come from env at runtime, not baked in.
+# Set MLFLOW_TRACKING_URI, MLFLOW_TRACKING_USERNAME, MLFLOW_TRACKING_PASSWORD.
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "7860"]

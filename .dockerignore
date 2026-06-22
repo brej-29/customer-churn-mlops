@@ -1,3 +1,8 @@
+# Version control
+.git/
+.gitignore
+
+# Python artifacts
 __pycache__/
 *.py[cod]
 *.pyo
@@ -6,18 +11,47 @@ __pycache__/
 *.tmp
 *.log
 
+# Virtual environments
 .venv/
 env/
 venv/
-.idea/
-.vscode/
-.git/
-.gitignore
 
+# Local MLflow tracking (champion is loaded at runtime from the registry)
 mlruns/
 mlartifacts/
 mlruns.db
 
+# DVC cache and tracked data blobs (large; fetched via dvc pull, not baked in)
+.dvc/cache/
+.dvc/tmp/
+data/raw/
+data/processed/
+
+# Development / CI artifacts
+tests/
+notebooks/
+loadtest/
+catboost_info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Runtime-generated logs (not baked in)
+logs/
+
+# Build / dist
 dist/
 build/
-.ipynb_checkpoints/
+
+# IDE
+.idea/
+.vscode/
+
+# Secrets — must never enter an image layer
+.env
+.dvc/config.local
+
+# Project docs not needed at runtime
+*.md
+LICENSE
+.github/
