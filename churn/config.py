@@ -58,6 +58,10 @@ class Settings(BaseSettings):
             ("groq_api_key", "GROQ_API_KEY"),
             ("llm_provider", "LLM_PROVIDER"),
             ("llm_model", "LLM_MODEL"),
+            # Bare MLFLOW_TRACKING_URI is the standard MLflow env var; CHURN_ prefix also works.
+            # Auth: set MLFLOW_TRACKING_USERNAME and MLFLOW_TRACKING_PASSWORD — MLflow reads
+            # those natively, so they don't need to appear in Settings.
+            ("mlflow_tracking_uri", "MLFLOW_TRACKING_URI"),
         ]:
             if not data.get(field):
                 val = os.environ.get(env_var)

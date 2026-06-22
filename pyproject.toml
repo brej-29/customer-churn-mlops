@@ -38,6 +38,9 @@ dependencies = [
     # RAG — semantic search over the retention-playbook corpus
     "sentence-transformers>=2.7",
     "faiss-cpu>=1.8",
+    # Data versioning — DVC with S3-compatible remote (used for DagsHub dataset storage)
+    "dvc>=3.0",
+    "dvc-s3>=3.0",
 ]
 
 [project.optional-dependencies]
