@@ -221,6 +221,14 @@ logs/
 data/processed/*
 !data/processed/.gitkeep
 
+# DVC — cache and local-only secrets (never commit these)
+# .dvc/config and data/raw/telco_churn.csv.dvc ARE committed (no secrets).
+.dvc/cache/
+.dvc/tmp/
+.dvc/config.local
+# Raw dataset is DVC-tracked; data/raw/.gitignore (written by dvc add) excludes it from git.
+data/raw/telco_churn.csv
+
 # FAISS index files (built in-memory at runtime; never commit to repo)
 *.faiss
 *.index

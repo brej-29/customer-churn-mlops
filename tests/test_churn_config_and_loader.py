@@ -6,7 +6,11 @@ from churn.config import Settings
 from churn.data import TELCO_EXPECTED_SHAPE, load_telco_raw
 
 
-def test_settings_defaults():
+def test_settings_defaults(monkeypatch):
+    # Clear MLFLOW_TRACKING_URI so that the local .env (which points at DagsHub)
+    # does not override the SQLite default in environments where .env is present.
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    monkeypatch.delenv("CHURN_MLFLOW_TRACKING_URI", raising=False)
     s = Settings()
     assert s.random_seed == 42
     assert str(s.telco_csv_path) == r"data\raw\telco_churn.csv" or str(

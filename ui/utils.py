@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Tuple
 
-
 INTEGER_FEATURES = [
     "tenure",
     "contract_type",

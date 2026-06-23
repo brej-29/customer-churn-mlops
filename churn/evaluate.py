@@ -531,9 +531,17 @@ def build_final_model(
             signature = infer_signature(
                 X_train, final_model.predict_proba(X_train.head(5))
             )
+            # artifact_path= is used (not name=) for compatibility with hosted
+            # MLflow backends (e.g. DagsHub) that pre-date the MLflow 3.x
+            # LoggedModel API (/api/2.0/mlflow/logged-models/search).  Using
+            # name= on those servers causes the model artifact to be silently
+            # skipped.  model_info.model_uri in MLflow 3.x returns the new
+            # LoggedModel format (models:/m-<uuid>) rather than the runs:/ path,
+            # so we construct the URI explicitly — with artifact_path= the model
+            # IS stored at runs:/<run_id>/final_model on every backend.
             mlflow.sklearn.log_model(
                 sk_model=final_model,
-                name="final_model",
+                artifact_path="final_model",
                 signature=signature,
                 input_example=X_train.head(5),
                 skops_trusted_types=[

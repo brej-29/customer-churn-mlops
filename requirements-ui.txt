@@ -1,0 +1,9 @@
+# Minimal UI dependencies — intentionally excludes torch, xgboost, scikit-learn,
+# sentence-transformers, faiss, and all ML/MLflow packages.  The UI is a pure
+# frontend: it calls the API over HTTP and renders results with Streamlit.
+streamlit>=1.35
+requests>=2.32
+httpx>=0.27
+pydantic>=2.7
+pydantic-settings>=2.3
+python-dotenv>=1.0
