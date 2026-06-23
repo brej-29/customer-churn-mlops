@@ -1,6 +1,13 @@
 """Streamlit UI for the Telco Customer Churn prediction demo."""
 import os
+import sys
+from pathlib import Path
 from typing import Any, Dict, Optional
+
+# Ensure the project root is on sys.path so `from ui.utils import ...` resolves
+# whether the script is launched via `streamlit run ui/app.py` (which only adds
+# ui/ to sys.path) or from inside Docker (where PYTHONPATH=/app handles it).
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import requests
 import streamlit as st
@@ -8,7 +15,7 @@ from requests.exceptions import RequestException
 
 from ui.utils import classify_churn_risk
 
-DEFAULT_API_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+DEFAULT_API_URL = os.getenv("API_BASE_URL", "http://localhost:7860")
 
 # ---------------------------------------------------------------------------
 # API helpers
