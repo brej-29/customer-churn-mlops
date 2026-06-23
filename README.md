@@ -15,8 +15,8 @@ This is not a notebook demo. Every layer has tests, contracts, and a CI gate.
 
 | | Link |
 |---|---|
-| **Interactive UI** | `https://<YOUR_HF_USERNAME>-churn-ui.hf.space` — fill after deploy ([runbook](deploy/HF_DEPLOY.md)) |
-| **API (Swagger)** | `https://<YOUR_HF_USERNAME>-churn-api.hf.space/docs` — fill after deploy ([runbook](deploy/HF_DEPLOY.md)) |
+| **Interactive UI** | [https://huggingface.co/spaces/BrejBala/churn-ui](https://huggingface.co/spaces/BrejBala/churn-ui) |
+| **API (Swagger)** |  [https://brejbala-churn-api.hf.space/docs#/](https://brejbala-churn-api.hf.space/docs#/)|
 | **MLflow Tracking** | [dagshub.com/brej-29/customer-churn-mlops.mlflow](https://dagshub.com/brej-29/customer-churn-mlops.mlflow) |
 
 ---
