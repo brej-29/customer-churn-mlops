@@ -24,11 +24,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups
 
-      # DagsHub S3 remote uses the DagsHub username as AWS_ACCESS_KEY_ID and the
-      # token as AWS_SECRET_ACCESS_KEY.  dvc-s3 picks these up automatically.
+      # DagsHub S3-compatible endpoint uses the access token as both the
+      # access key ID and the secret key (matches .dvc/config.local behaviour).
       - name: Pull dataset via DVC
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_USER }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_TOKEN }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DAGSHUB_TOKEN }}
         run: uv run dvc pull
 
@@ -94,7 +94,7 @@ jobs:
 
       - name: Pull dataset via DVC
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_USER }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DAGSHUB_TOKEN }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DAGSHUB_TOKEN }}
         run: uv run dvc pull
 
