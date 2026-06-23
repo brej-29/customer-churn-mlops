@@ -32,6 +32,11 @@ COPY --from=builder /opt/venv /opt/venv
 # Only copy UI source — deliberately excludes churn/, api/, data/, reports/.
 COPY ui/ ui/
 
+# Streamlit writes its installation-ID file to ~/.streamlit (which resolves to
+# /app/.streamlit because the churn user's home is /app).  /app is owned by
+# root after WORKDIR, so we create the dir and hand it to churn before USER.
+RUN mkdir -p /app/.streamlit && chown -R churn:churn /app
+
 USER churn
 
 EXPOSE 7860

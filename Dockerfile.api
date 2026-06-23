@@ -76,6 +76,11 @@ COPY data/playbooks/ data/playbooks/
 # reports/threshold.json is the fallback threshold when the registry tag is absent.
 COPY reports/ reports/
 
+# Create writable runtime directories before dropping to non-root.
+# /app is owned by root after WORKDIR; the churn user needs logs/ for the
+# SQLite prediction log, .streamlit/ is unused here but harmless to create.
+RUN mkdir -p /app/logs && chown -R churn:churn /app
+
 USER churn
 
 EXPOSE 7860
